@@ -1982,3 +1982,190 @@ fn test_builtin_iterables() {
     qeval(&mut p, r#"forall(x in "abc", x in "abacus")"#);
     qnull(&mut p, r#"forall(x in "abcd", x in "abacus")"#);
 }
+
+// https://sites.google.com/site/prologsite/prolog-problems/
+
+#[test]
+// 1.01 (*) Find the last element of a list.
+fn problem_1_01() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        my_last(X,[X]);
+        my_last(X,[_,*L]) if my_last(X,L);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(&mut polar, r#"my_last(x, ["a", "b", "c", "d"])"#, "x"),
+        vec![value!("d")]
+    );
+}
+
+#[test]
+// 1.02 (*) Find the last but one element of a list.
+fn problem_1_02() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        last_but_one(X,[X,_]);
+        last_but_one(X,[_,Y,*Ys]) if last_but_one(X,[Y,*Ys]);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(&mut polar, r#"last_but_one(x, ["a", "b", "c", "d"])"#, "x"),
+        vec![value!("c")]
+    );
+}
+
+#[test]
+// 1.03 (*) Find the K'th element of a list.
+fn problem_1_03() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        element_at(X,[X,*_],1);
+        element_at(X,[_,*L],K) if K > 1 and K1 = K - 1 and element_at(X,L,K1);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"element_at(x, ["a", "b", "c", "d", "e"], 3)"#,
+            "x"
+        ),
+        vec![value!("c")]
+    );
+}
+
+#[test]
+// 1.04 (*) Find the number of elements of a list.
+fn problem_1_04() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        my_length([],0);
+        my_length([_,*L],N) if my_length(L,N1) and N = N1 + 1;
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"my_length(["a", "b", "c", "d", "e"], x)"#,
+            "x"
+        ),
+        vec![value!(5)]
+    );
+}
+
+#[test]
+// 1.05 (*) Reverse a list.
+fn problem_1_05() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        my_reverse(L1,L2) if my_rev(L1,L2,[]);
+
+        my_rev([],L2,L2) if cut;
+        my_rev([X,*Xs],L2,Acc) if my_rev(Xs,L2,[X,*Acc]);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"my_reverse(["a", "b", "c", "d", "e"], x)"#,
+            "x"
+        ),
+        vec![value!(["e", "d", "c", "b", "a"])]
+    );
+}
+
+#[test]
+// 1.06 (*) Find out whether a list is a palindrome.
+fn problem_1_06() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        # https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#reverse/2
+        reverse(Xs, Ys) if
+            reverse(Xs, [], Ys, Ys);
+
+        reverse([], Ys, Ys, []);
+        reverse([X,*Xs], Rs, Ys, [_,*Bound]) if
+            reverse(Xs, [X,*Rs], Ys, Bound);
+
+        is_palindrome(L) if reverse(L,L);
+    "#,
+        )
+        .unwrap();
+    assert!(qnull(
+        &mut polar,
+        r#"is_palindrome(["a", "b", "c", "d", "e"])"#
+    ));
+    assert!(qeval(
+        &mut polar,
+        r#"is_palindrome(["a", "b", "c", "b", "a"])"#
+    ));
+}
+
+#[test]
+// 1.07 (**) Flatten a nested list structure.
+fn problem_1_07() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        # https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#append/3
+        append([], L, L);
+        append([H,*T], L, [H,*R]) if
+            append(T, L, R);
+
+        my_flatten(X,[X]) if not X matches [*_];
+        my_flatten([],[]);
+        my_flatten([X,*Xs],Zs) if my_flatten(X,Y) and my_flatten(Xs,Ys) and append(Y,Ys,Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"my_flatten(["a", ["b", ["c", "d"], "e"]], x)"#,
+            "x"
+        ),
+        vec![value!(["a", "b", "c", "d", "e"])]
+    );
+}
+
+#[test]
+// 1.08 (**) Eliminate consecutive duplicates of list elements.
+fn problem_1_08() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        compress([],[]);
+        compress([X],[X]);
+        compress([X,X,*Xs],Zs) if compress([X,*Xs],Zs);
+        compress([X,Y,*Ys],[X,*Zs]) if not X = Y and compress([Y,*Ys],Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"compress(["a","a","a","a","b","c","c","a","a","d","e","e","e","e"],x)"#,
+            "x"
+        ),
+        vec![value!(["a", "b", "c", "a", "d", "e"])]
+    );
+}
