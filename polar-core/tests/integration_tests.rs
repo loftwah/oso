@@ -2043,18 +2043,16 @@ fn problem_1_03() {
     );
 }
 
+const MY_LENGTH: &str = r#"
+    my_length([],0);
+    my_length([_,*L],N) if my_length(L,N1) and N = N1 + 1;
+"#;
+
 #[test]
 // 1.04 (*) Find the number of elements of a list.
 fn problem_1_04() {
     let mut polar = Polar::new();
-    polar
-        .load_str(
-            r#"
-        my_length([],0);
-        my_length([_,*L],N) if my_length(L,N1) and N = N1 + 1;
-    "#,
-        )
-        .unwrap();
+    polar.load_str(MY_LENGTH).unwrap();
     assert_eq!(
         qvar(
             &mut polar,
@@ -2089,25 +2087,22 @@ fn problem_1_05() {
     );
 }
 
+// https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#reverse/2
+const SWIPL_REVERSE_2: &str = r#"
+    reverse(Xs, Ys) if
+        reverse(Xs, [], Ys, Ys);
+
+    reverse([], Ys, Ys, []);
+    reverse([X,*Xs], Rs, Ys, [_,*Bound]) if
+        reverse(Xs, [X,*Rs], Ys, Bound);
+"#;
+
 #[test]
 // 1.06 (*) Find out whether a list is a palindrome.
 fn problem_1_06() {
     let mut polar = Polar::new();
-    polar
-        .load_str(
-            r#"
-        # https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#reverse/2
-        reverse(Xs, Ys) if
-            reverse(Xs, [], Ys, Ys);
-
-        reverse([], Ys, Ys, []);
-        reverse([X,*Xs], Rs, Ys, [_,*Bound]) if
-            reverse(Xs, [X,*Rs], Ys, Bound);
-
-        is_palindrome(L) if reverse(L,L);
-    "#,
-        )
-        .unwrap();
+    polar.load_str(SWIPL_REVERSE_2).unwrap();
+    polar.load_str("is_palindrome(L) if reverse(L,L);").unwrap();
     assert!(qnull(
         &mut polar,
         r#"is_palindrome(["a", "b", "c", "d", "e"])"#
@@ -2118,18 +2113,21 @@ fn problem_1_06() {
     ));
 }
 
+// https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#append/3
+const SWIPL_APPEND_3: &str = r#"
+    append([], L, L);
+    append([H,*T], L, [H,*R]) if
+        append(T, L, R);
+"#;
+
 #[test]
 // 1.07 (**) Flatten a nested list structure.
 fn problem_1_07() {
     let mut polar = Polar::new();
+    polar.load_str(SWIPL_APPEND_3).unwrap();
     polar
         .load_str(
             r#"
-        # https://www.swi-prolog.org/pldoc/doc/_SWI_/library/lists.pl?show=src#append/3
-        append([], L, L);
-        append([H,*T], L, [H,*R]) if
-            append(T, L, R);
-
         my_flatten(X,[X]) if not X matches [*_];
         my_flatten([],[]);
         my_flatten([X,*Xs],Zs) if my_flatten(X,Y) and my_flatten(Xs,Ys) and append(Y,Ys,Zs);
@@ -2167,5 +2165,69 @@ fn problem_1_08() {
             "x"
         ),
         vec![value!(["a", "b", "c", "a", "d", "e"])]
+    );
+}
+
+const PROBLEM_1_09: &str = r#"
+    pack([],[]);
+    pack([X,*Xs],[Z,*Zs]) if transfer(X,Xs,Ys,Z) and pack(Ys,Zs);
+
+    transfer(X,[],[],[X]);
+    transfer(X,[Y,*Ys],[Y,*Ys],[X]) if not X = Y;
+    transfer(X,[X,*Xs],Ys,[X,*Zs]) if transfer(X,Xs,Ys,Zs);
+"#;
+
+#[test]
+// 1.09 (**) Pack consecutive duplicates of list elements into sublists.
+fn problem_1_09() {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_09).unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"pack(["a","a","a","a","b","c","c","a","a","d","e","e","e","e"],X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!(["a", "a", "a", "a"])),
+            term!(value!(["b"])),
+            term!(value!(["c", "c"])),
+            term!(value!(["a", "a"])),
+            term!(value!(["d"])),
+            term!(value!(["e", "e", "e", "e"])),
+        ])]
+    );
+}
+
+#[test]
+// 1.10 (*) Run-length encoding of a list.
+fn problem_1_10() {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_09).unwrap();
+    polar.load_str(MY_LENGTH).unwrap();
+    polar
+        .load_str(
+            r#"
+        encode(L1,L2) if pack(L1,L) and transform(L,L2);
+
+        transform([],[]);
+        transform([[X,*Xs],*Ys],[[N,X],*Zs]) if my_length([X,*Xs],N) and transform(Ys,Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"encode(["a","a","a","a","b","c","c","a","a","d","e","e","e","e"],X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!([4, "a"])),
+            term!(value!([1, "b"])),
+            term!(value!([2, "c"])),
+            term!(value!([2, "a"])),
+            term!(value!([1, "d"])),
+            term!(value!([4, "e"])),
+        ])]
     );
 }
