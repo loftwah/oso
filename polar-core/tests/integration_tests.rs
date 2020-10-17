@@ -2199,22 +2199,20 @@ fn problem_1_09() {
     );
 }
 
+const PROBLEM_1_10: &str = r#"
+    encode(L1,L2) if pack(L1,L) and transform(L,L2);
+
+    transform([],[]);
+    transform([[X,*Xs],*Ys],[[N,X],*Zs]) if my_length([X,*Xs],N) and transform(Ys,Zs);
+"#;
+
 #[test]
 // 1.10 (*) Run-length encoding of a list.
 fn problem_1_10() {
     let mut polar = Polar::new();
     polar.load_str(PROBLEM_1_09).unwrap();
     polar.load_str(MY_LENGTH).unwrap();
-    polar
-        .load_str(
-            r#"
-        encode(L1,L2) if pack(L1,L) and transform(L,L2);
-
-        transform([],[]);
-        transform([[X,*Xs],*Ys],[[N,X],*Zs]) if my_length([X,*Xs],N) and transform(Ys,Zs);
-    "#,
-        )
-        .unwrap();
+    polar.load_str(PROBLEM_1_10).unwrap();
     assert_eq!(
         qvar(
             &mut polar,
@@ -2227,6 +2225,41 @@ fn problem_1_10() {
             term!(value!([2, "c"])),
             term!(value!([2, "a"])),
             term!(value!([1, "d"])),
+            term!(value!([4, "e"])),
+        ])]
+    );
+}
+
+#[test]
+// 1.11 (*) Modified run-length encoding.
+fn problem_1_11() {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_09).unwrap();
+    polar.load_str(MY_LENGTH).unwrap();
+    polar.load_str(PROBLEM_1_10).unwrap();
+    polar
+        .load_str(
+            r#"
+        encode_modified(L1,L2) if encode(L1,L) and strip(L,L2);
+
+        strip([],[]);
+        strip([[1,X],*Ys],[X,*Zs]) if strip(Ys,Zs);
+        strip([[N,X],*Ys],[[N,X],*Zs]) if N > 1 and strip(Ys,Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"encode_modified(["a","a","a","a","b","c","c","a","a","d","e","e","e","e"],X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!([4, "a"])),
+            term!(value!("b")),
+            term!(value!([2, "c"])),
+            term!(value!([2, "a"])),
+            term!(value!("d")),
             term!(value!([4, "e"])),
         ])]
     );
