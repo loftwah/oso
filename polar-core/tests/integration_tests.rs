@@ -2403,3 +2403,73 @@ fn problem_1_15() {
     //     vec![vec![value!(sym!("Y")), value!([])]],
     // );
 }
+
+#[test]
+// 1.16 (**) Drop every N'th element from a list.
+fn problem_1_16() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        drop(L1,N,L2) if drop(L1,N,L2,N);
+
+        drop([],_,[],_);
+        drop([_,*Xs],N,Ys,1) if drop(Xs,N,Ys,N);
+        drop([X,*Xs],N,[X,*Ys],K) if K > 1 and K1 = K - 1 and drop(Xs,N,Ys,K1);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"drop(["a","b","c","d","e","f","g","h","i","k"],3,X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("d")),
+            term!(value!("e")),
+            term!(value!("g")),
+            term!(value!("h")),
+            term!(value!("k")),
+        ])]
+    );
+}
+
+#[test]
+// 1.17 (*) Split a list into two parts; the length of the first part is given.
+fn problem_1_17() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        split(L,0,[],L);
+        split([X,*Xs],N,[X,*Ys],Zs) if N > 0 and N1 = N - 1 and split(Xs,N1,Ys,Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvars(
+            &mut polar,
+            r#"split(["a","b","c","d","e","f","g","h","i","k"],3,L1,L2)"#,
+            &["L1", "L2"],
+        ),
+        vec![vec![
+            Value::List(vec![
+                term!(value!("a")),
+                term!(value!("b")),
+                term!(value!("c")),
+            ]),
+            Value::List(vec![
+                term!(value!("d")),
+                term!(value!("e")),
+                term!(value!("f")),
+                term!(value!("g")),
+                term!(value!("h")),
+                term!(value!("i")),
+                term!(value!("k")),
+            ]),
+        ]]
+    );
+}
