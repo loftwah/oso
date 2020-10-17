@@ -2367,3 +2367,39 @@ fn problem_1_14() {
         ])]
     );
 }
+
+#[test]
+// 1.15 (**) Duplicate the elements of a list a given number of times.
+fn problem_1_15() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        dupli(L1,N,L2) if dupli(L1,N,L2,N);
+
+        dupli([],_,[],_);
+        dupli([_,*Xs],N,Ys,0) if dupli(Xs,N,Ys,N);
+        dupli([X,*Xs],N,[X,*Ys],K) if K > 0 and K1 = K - 1 and dupli([X,*Xs],N,Ys,K1);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(&mut polar, r#"dupli(["a","b","c"],3,X)"#, "X"),
+        vec![Value::List(vec![
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("b")),
+            term!(value!("b")),
+            term!(value!("c")),
+            term!(value!("c")),
+            term!(value!("c")),
+        ])]
+    );
+    // This is the result returned in SWI Prolog. Polar currently times out.
+    // assert_eq!(
+    //     qvars(&mut polar, "dupli(X,3,Y)", &["X", "Y"]),
+    //     vec![vec![value!(sym!("Y")), value!([])]],
+    // );
+}
