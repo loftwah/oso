@@ -2303,3 +2303,38 @@ fn problem_1_12() {
         ])]
     );
 }
+
+#[test]
+// 1.13 (**) Run-length encoding of a list (direct solution).
+fn problem_1_13() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        encode_direct([],[]);
+        encode_direct([X,*Xs],[Z,*Zs]) if count(X,Xs,Ys,1,Z) and encode_direct(Ys,Zs);
+
+        count(X,[],[],1,X);
+        count(X,[],[],N,[N,X]) if N > 1;
+        count(X,[Y,*Ys],[Y,*Ys],1,X) if not X = Y;
+        count(X,[Y,*Ys],[Y,*Ys],N,[N,X]) if N > 1 and not X = Y;
+        count(X,[X,*Xs],Ys,K,T) if K1 = K + 1 and count(X,Xs,Ys,K1,T);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"encode_direct(["a","a","a","a","b","c","c","a","a","d","e","e","e","e"],X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!([4, "a"])),
+            term!(value!("b")),
+            term!(value!([2, "c"])),
+            term!(value!([2, "a"])),
+            term!(value!("d")),
+            term!(value!([4, "e"])),
+        ])]
+    );
+}
