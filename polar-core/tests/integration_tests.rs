@@ -2264,3 +2264,42 @@ fn problem_1_11() {
         ])]
     );
 }
+
+#[test]
+// 1.12 (**) Decode a run-length encoded list.
+fn problem_1_12() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        decode([],[]);
+        decode([X,*Ys],[X,*Zs]) if not X matches [*_] and decode(Ys,Zs);
+        decode([[1,X],*Ys],[X,*Zs]) if decode(Ys,Zs);
+        decode([[N,X],*Ys],[X,*Zs]) if N > 1 and N1 = N - 1 and decode([[N1,X],*Ys],Zs);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"decode([[4,"a"],"b",[2,"c"],[2,"a"],"d",[4,"e"]],X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("c")),
+            term!(value!("c")),
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("d")),
+            term!(value!("e")),
+            term!(value!("e")),
+            term!(value!("e")),
+            term!(value!("e")),
+        ])]
+    );
+}
