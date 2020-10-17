@@ -2338,3 +2338,32 @@ fn problem_1_13() {
         ])]
     );
 }
+
+#[test]
+// 1.14 (*) Duplicate the elements of a list.
+fn problem_1_14() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        dupli([],[]);
+        dupli([X,*Xs],[X,X,*Ys]) if dupli(Xs,Ys);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(&mut polar, r#"dupli(["a","b","c","c","d"],X)"#, "X"),
+        vec![Value::List(vec![
+            term!(value!("a")),
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("b")),
+            term!(value!("c")),
+            term!(value!("c")),
+            term!(value!("c")),
+            term!(value!("c")),
+            term!(value!("d")),
+            term!(value!("d")),
+        ])]
+    );
+}
