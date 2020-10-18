@@ -2437,18 +2437,16 @@ fn problem_1_16() {
     );
 }
 
+const PROBLEM_1_17: &str = r#"
+    split(L,0,[],L);
+    split([X,*Xs],N,[X,*Ys],Zs) if N > 0 and N1 = N - 1 and split(Xs,N1,Ys,Zs);
+"#;
+
 #[test]
 // 1.17 (*) Split a list into two parts; the length of the first part is given.
 fn problem_1_17() {
     let mut polar = Polar::new();
-    polar
-        .load_str(
-            r#"
-        split(L,0,[],L);
-        split([X,*Xs],N,[X,*Ys],Zs) if N > 0 and N1 = N - 1 and split(Xs,N1,Ys,Zs);
-    "#,
-        )
-        .unwrap();
+    polar.load_str(PROBLEM_1_17).unwrap();
     assert_eq!(
         qvars(
             &mut polar,
@@ -2501,6 +2499,58 @@ fn problem_1_18() {
             term!(value!("e")),
             term!(value!("f")),
             term!(value!("g")),
+        ])]
+    );
+}
+
+#[test]
+// 1.19 (**) Rotate a list N places to the left.
+fn problem_1_19() {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_17).unwrap();
+    polar.load_str(SWIPL_APPEND_3).unwrap();
+    polar.load_str(MY_LENGTH).unwrap();
+    polar
+        .load_str(
+            r#"
+        rotate([],_,[]) if cut;
+        rotate(L1,N,L2) if
+           my_length(L1,NL1) and N1 = N mod NL1 and split(L1,N1,S1,S2) and append(S2,S1,L2);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"rotate(["a","b","c","d","e","f","g","h"],3,X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!("d")),
+            term!(value!("e")),
+            term!(value!("f")),
+            term!(value!("g")),
+            term!(value!("h")),
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("c")),
+        ])]
+    );
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"rotate(["a","b","c","d","e","f","g","h"],-2,X)"#,
+            "X"
+        ),
+        vec![Value::List(vec![
+            term!(value!("g")),
+            term!(value!("h")),
+            term!(value!("a")),
+            term!(value!("b")),
+            term!(value!("c")),
+            term!(value!("d")),
+            term!(value!("e")),
+            term!(value!("f")),
         ])]
     );
 }
