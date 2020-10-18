@@ -2473,3 +2473,34 @@ fn problem_1_17() {
         ]]
     );
 }
+
+#[test]
+// 1.18 (**) Extract a slice from a list.
+fn problem_1_18() {
+    let mut polar = Polar::new();
+    polar
+        .load_str(
+            r#"
+        slice([X,*_],1,1,[X]);
+        slice([X,*Xs],1,K,[X,*Ys]) if K > 1 and
+           K1 = K - 1 and slice(Xs,1,K1,Ys);
+        slice([_,*Xs],I,K,Ys) if I > 1 and
+           I1 = I - 1 and K1 = K - 1 and slice(Xs,I1,K1,Ys);
+    "#,
+        )
+        .unwrap();
+    assert_eq!(
+        qvar(
+            &mut polar,
+            r#"slice(["a","b","c","d","e","f","g","h","i","k"],3,7,L)"#,
+            "L"
+        ),
+        vec![Value::List(vec![
+            term!(value!("c")),
+            term!(value!("d")),
+            term!(value!("e")),
+            term!(value!("f")),
+            term!(value!("g")),
+        ])]
+    );
+}
