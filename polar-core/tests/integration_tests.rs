@@ -11,6 +11,7 @@ use std::iter::FromIterator;
 use polar_core::{
     error::*,
     events::*,
+    list,
     messages::*,
     polar::{Polar, Query},
     sym, term,
@@ -2234,22 +2235,9 @@ fn problem_1_12() -> TestResult {
         &mut polar,
         r#"decode([[4,"a"],"b",[2,"c"],[2,"a"],"d",[4,"e"]],X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("a"),
-            term!("a"),
-            term!("a"),
-            term!("a"),
-            term!("b"),
-            term!("c"),
-            term!("c"),
-            term!("a"),
-            term!("a"),
-            term!("d"),
-            term!("e"),
-            term!("e"),
-            term!("e"),
-            term!("e"),
-        ])],
+        vec![list![
+            "a", "a", "a", "a", "b", "c", "c", "a", "a", "d", "e", "e", "e", "e"
+        ]],
     );
     Ok(())
 }
@@ -2296,18 +2284,7 @@ fn problem_1_14() -> TestResult {
         &mut polar,
         r#"dupli(["a","b","c","c","d"],X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("a"),
-            term!("a"),
-            term!("b"),
-            term!("b"),
-            term!("c"),
-            term!("c"),
-            term!("c"),
-            term!("c"),
-            term!("d"),
-            term!("d"),
-        ])],
+        vec![list!["a", "a", "b", "b", "c", "c", "c", "c", "d", "d"]],
     );
     Ok(())
 }
@@ -2327,17 +2304,7 @@ fn problem_1_15() -> TestResult {
         &mut polar,
         r#"dupli(["a","b","c"],3,X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("a"),
-            term!("a"),
-            term!("a"),
-            term!("b"),
-            term!("b"),
-            term!("b"),
-            term!("c"),
-            term!("c"),
-            term!("c"),
-        ])],
+        vec![list!["a", "a", "a", "b", "b", "b", "c", "c", "c"]],
     );
     // This is the result returned in SWI Prolog. Polar currently times out.
     // qvars(&mut polar, "dupli(X,3,Y)", &["X", "Y"], vec![values![sym!("Y"), []]]);
@@ -2359,15 +2326,7 @@ fn problem_1_16() -> TestResult {
         &mut polar,
         r#"drop(["a","b","c","d","e","f","g","h","i","k"],3,X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("a"),
-            term!("b"),
-            term!("d"),
-            term!("e"),
-            term!("g"),
-            term!("h"),
-            term!("k"),
-        ])],
+        vec![list!["a", "b", "d", "e", "g", "h", "k"]],
     );
     Ok(())
 }
@@ -2385,16 +2344,8 @@ fn problem_1_17() -> TestResult {
         r#"split(["a","b","c","d","e","f","g","h","i","k"],3,L1,L2)"#,
         &["L1", "L2"],
         vec![vec![
-            Value::List(vec![term!("a"), term!("b"), term!("c")]),
-            Value::List(vec![
-                term!("d"),
-                term!("e"),
-                term!("f"),
-                term!("g"),
-                term!("h"),
-                term!("i"),
-                term!("k"),
-            ]),
+            list!["a", "b", "c"],
+            list!["d", "e", "f", "g", "h", "i", "k"],
         ]],
     );
     Ok(())
@@ -2415,13 +2366,7 @@ fn problem_1_18() -> TestResult {
         &mut polar,
         r#"slice(["a","b","c","d","e","f","g","h","i","k"],3,7,L)"#,
         "L",
-        vec![Value::List(vec![
-            term!("c"),
-            term!("d"),
-            term!("e"),
-            term!("f"),
-            term!("g"),
-        ])],
+        vec![list!["c", "d", "e", "f", "g"]],
     );
     Ok(())
 }
@@ -2442,31 +2387,13 @@ fn problem_1_19() -> TestResult {
         &mut polar,
         r#"rotate(["a","b","c","d","e","f","g","h"],3,X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("d"),
-            term!("e"),
-            term!("f"),
-            term!("g"),
-            term!("h"),
-            term!("a"),
-            term!("b"),
-            term!("c"),
-        ])],
+        vec![list!["d", "e", "f", "g", "h", "a", "b", "c"]],
     );
     qvar(
         &mut polar,
         r#"rotate(["a","b","c","d","e","f","g","h"],-2,X)"#,
         "X",
-        vec![Value::List(vec![
-            term!("g"),
-            term!("h"),
-            term!("a"),
-            term!("b"),
-            term!("c"),
-            term!("d"),
-            term!("e"),
-            term!("f"),
-        ])],
+        vec![list!["g", "h", "a", "b", "c", "d", "e", "f"]],
     );
     Ok(())
 }
