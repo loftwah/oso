@@ -2397,3 +2397,53 @@ fn problem_1_19() -> TestResult {
     );
     Ok(())
 }
+
+const PROBLEM_1_20: &str = r#"remove_at(X,[X,*Xs],1,Xs);
+                              remove_at(X,[Y,*Xs],K,[Y,*Ys]) if K > 1 and
+                                  K1 = K - 1 and remove_at(X,Xs,K1,Ys);"#;
+
+#[test]
+// 1.20 (*) Remove the K'th element from a list.
+fn problem_1_20() -> TestResult {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_20)?;
+    qvars(
+        &mut polar,
+        r#"remove_at(X,["a","b","c","d"],2,R)"#,
+        &["X", "R"],
+        values![["b", list!["a", "c", "d"]]],
+    );
+    Ok(())
+}
+
+#[test]
+// 1.21 (*) Insert an element at a given position into a list.
+fn problem_1_21() -> TestResult {
+    let mut polar = Polar::new();
+    polar.load_str(PROBLEM_1_20)?;
+    polar.load_str("insert_at(X,L,K,R) if remove_at(X,R,K,L);")?;
+    qvar(
+        &mut polar,
+        r#"insert_at("alfa",["a","b","c","d"],2,L)"#,
+        "L",
+        vec![list!["a", "alfa", "b", "c", "d"]],
+    );
+    Ok(())
+}
+
+#[test]
+// 1.22 (*) Create a list containing all integers within a given range.
+fn problem_1_22() -> TestResult {
+    let mut polar = Polar::new();
+    polar.load_str(
+        r#"range(I,I,[I]);
+           range(I,K,[I,*L]) if I < K and I1 = I + 1 and range(I1,K,L);"#,
+    )?;
+    qvar(
+        &mut polar,
+        r#"range(4,9,L)"#,
+        "L",
+        vec![list![4, 5, 6, 7, 8, 9]],
+    );
+    Ok(())
+}
