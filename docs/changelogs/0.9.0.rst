@@ -70,6 +70,9 @@ scoped to the current oso instance, user and action.
 
 .. _scoped_session: https://docs.sqlalchemy.org/en/13/orm/contextual.html#sqlalchemy.orm.scoping.scoped_session
 
+Initial support for builtin roles in ``sqlalchemy-oso``
+-----------------------------------------------------
+
 Other bugs & improvements
 =========================
 
