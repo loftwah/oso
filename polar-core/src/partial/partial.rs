@@ -681,6 +681,42 @@ mod test {
     }
 
     #[test]
+    fn test_rule_filtering_with_partials() -> TestResult {
+        let p = Polar::new();
+        p.load_str(
+            r#"f(x) if g(x.c);
+               g(y: B) if y.b > 0;
+               g(y: C) if y.c > 0;"#,
+        )?;
+
+        let a = partial!(
+            "a",
+            [op!(
+                Isa,
+                term!(sym!("_this")),
+                term!(pattern!(instance!("A")))
+            )]
+        );
+        let mut q = p.new_query_from_term(term!(call!("f", [a])), false);
+        let mut next_binding = || loop {
+            match q.next_event().unwrap() {
+                QueryEvent::Result { bindings, .. } => return bindings,
+                QueryEvent::ExternalIsSubclass { call_id, .. } => {
+                    q.question_result(call_id, false).unwrap();
+                }
+                _ => panic!("not bindings"),
+            }
+        };
+        assert_partial_expression!(
+            next_binding(),
+            "a",
+            "_this matches A{} and _this.c matches C{} and _this.c.c > 0"
+        );
+        assert_query_done!(q);
+        Ok(())
+    }
+
+    #[test]
     fn test_unifying_partials() -> TestResult {
         let p = Polar::new();
         p.load_str("h(x, y) if x = y;")?;
