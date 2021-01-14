@@ -193,132 +193,19 @@ impl<'vm> Folder for Simplifier<'vm> {
             // Non-trivial conjunctions. Choose a unification constraint to
             // make a binding from, maybe throw it away, and fold the rest.
             Operator::And if o.args.len() > 1 => {
-                if let Some(i) = o.constraints().iter().position(|p| match p.operator {
-                    // A conjunction of TRUE with X is X, so drop TRUE.
-                    Operator::And if p.args.is_empty() => true,
+                if let Some(i) = o.constraints().iter().position(|constraint| {
+                    // The constraints from `o` with `constraint` removed.
+                    let constraints_without_constraint = o.clone_with_constraints(
+                        o.constraints()
+                            .into_iter()
+                            .filter(|r| r != constraint)
+                            .collect(),
+                    );
 
-                    // Choose a unification to maybe drop.
-                    Operator::Unify | Operator::Eq => {
-                        let left = &p.args[0];
-                        let right = &p.args[1];
-                        let q = o.clone_with_constraints(
-                            o.constraints().into_iter().filter(|r| r != p).collect(),
-                        );
-                        left == right
-                            || match (left.value(), right.value()) {
-                                (Value::Variable(l), _) | (Value::RestVariable(l), _)
-                                    if self.is_dot_this(right)
-                                        && (self.is_this(right) || q.variables().contains(l)) =>
-                                {
-                                    self.bind(l.clone(), right.clone());
-                                    true
-                                }
-                                (_, Value::Variable(r)) | (_, Value::RestVariable(r))
-                                    if self.is_dot_this(left)
-                                        && (self.is_this(left) || q.variables().contains(r)) =>
-                                {
-                                    self.bind(r.clone(), left.clone());
-                                    true
-                                }
-                                _ if self.is_dot_this(left) || self.is_dot_this(right) => false,
-                                (Value::Variable(l), Value::Variable(r))
-                                | (Value::Variable(l), Value::RestVariable(r))
-                                | (Value::RestVariable(l), Value::Variable(r))
-                                | (Value::RestVariable(l), Value::RestVariable(r)) => {
-                                    match (self.vm.variable_state(l), self.vm.variable_state(r)) {
-                                        (VariableState::Unbound, VariableState::Unbound) => todo!(),
-                                        (VariableState::Unbound, VariableState::Cycle(_)) => {
-                                            self.bind(l.clone(), right.clone());
-                                            true
-                                        }
-                                        (VariableState::Unbound, VariableState::Partial(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Unbound, VariableState::Bound(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Cycle(_), VariableState::Unbound) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Cycle(_), VariableState::Cycle(_)) => {
-                                            if !self.is_bound(l) {
-                                                self.bind(l.clone(), right.clone());
-                                            }
-                                            if !self.is_bound(r) {
-                                                self.bind(r.clone(), left.clone());
-                                            }
-                                            true
-                                        }
-                                        (VariableState::Cycle(_), VariableState::Partial(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Cycle(_), VariableState::Bound(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Partial(_), VariableState::Unbound) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Partial(_), VariableState::Cycle(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Partial(_), VariableState::Partial(_)) => {
-                                            if !self.is_bound(l) {
-                                                self.bind(l.clone(), right.clone());
-                                            }
-                                            if !self.is_bound(r) {
-                                                self.bind(r.clone(), left.clone());
-                                            }
-                                            true
-                                        }
-                                        (VariableState::Partial(_), VariableState::Bound(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Bound(_), VariableState::Unbound) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Bound(_), VariableState::Cycle(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Bound(_), VariableState::Partial(_)) => {
-                                            todo!()
-                                        }
-                                        (VariableState::Bound(_), VariableState::Bound(_)) => {
-                                            todo!()
-                                        }
-                                    }
-                                }
-                                (Value::Variable(l), _) | (Value::RestVariable(l), _) => {
-                                    match self.vm.variable_state(l) {
-                                        VariableState::Unbound => {
-                                            self.bind(l.clone(), right.clone());
-                                            true
-                                        }
-                                        VariableState::Cycle(_) => {
-                                            self.bind(l.clone(), right.clone());
-                                            true
-                                        }
-                                        VariableState::Partial(_) => {
-                                            self.bind(l.clone(), right.clone());
-                                            true
-                                        }
-                                        VariableState::Bound(_) => todo!(),
-                                    }
-                                }
-                                (_, Value::Variable(r)) | (_, Value::RestVariable(r)) => {
-                                    match self.vm.variable_state(r) {
-                                        VariableState::Unbound => todo!(),
-                                        VariableState::Cycle(_) => todo!(),
-                                        VariableState::Partial(_) => {
-                                            self.bind(r.clone(), left.clone());
-                                            true
-                                        }
-                                        VariableState::Bound(_) => todo!(),
-                                    }
-                                }
-                                _ => false,
-                            }
-                    }
-                    _ => false,
+                    // Variables referenced in the parent AND if we choose to remove this
+                    // constraint.
+                    let variables = constraints_without_constraint.variables();
+                    self.maybe_choose_constraint(constraint, variables)
                 }) {
                     o.args.remove(i);
                 }
@@ -371,6 +258,7 @@ impl<'vm> Simplifier<'vm> {
         self.bindings.contains_key(var)
     }
 
+    /// Term is a variable and the name = self.this_var
     fn is_this(&self, t: &Term) -> bool {
         match t.value() {
             Value::Variable(v) | Value::RestVariable(v) => v == &self.this_var,
@@ -378,10 +266,133 @@ impl<'vm> Simplifier<'vm> {
         }
     }
 
+    /// Either _this or _this.?
     fn is_dot_this(&self, t: &Term) -> bool {
         match t.value() {
             Value::Expression(e) => e.operator == Operator::Dot && self.is_dot_this(&e.args[0]),
             _ => self.is_this(t),
+        }
+    }
+
+    /// Returns true when the constraint can be replaced with a binding, and makes the binding.
+    ///
+    /// Params:
+    ///     constraint: The constraint to consider removing.
+    ///     variables: The variables referenced in the parent AND by other terms (not constraint).
+    fn maybe_choose_constraint(&mut self, constraint: &Operation, variables: Vec<Symbol>) -> bool {
+        match constraint.operator {
+            // A conjunction of TRUE with X is X, so drop TRUE.
+            Operator::And if constraint.args.is_empty() => true,
+
+            // Choose a unification to maybe drop.
+            Operator::Unify | Operator::Eq => {
+                let left = &constraint.args[0];
+                let right = &constraint.args[1];
+
+                // Drop if the sides are exactly equal.
+                left == right
+                    // Or...
+                    || match (left.value(), right.value()) {
+                        // Bind l to right if:
+                        // Variable(l) = _this.? AND l is referenced in another term
+                        // Variable(l) = _this
+                        (Value::Variable(l), _) | (Value::RestVariable(l), _)
+                            if self.is_dot_this(right)
+                                && (self.is_this(right) || variables.contains(l)) =>
+                        {
+                            self.bind(l.clone(), right.clone());
+                            true
+                        }
+                        // Consider binding r to left if:
+                        // _this.? = Variable(r) AND l is referenced in another term
+                        // _this = Variable(r)
+                        (_, Value::Variable(r)) | (_, Value::RestVariable(r))
+                            if self.is_dot_this(left)
+                                && (self.is_this(left) || variables.contains(r)) =>
+                        {
+                            self.bind(r.clone(), left.clone());
+                            true
+                        }
+                        // If either side is _this or _this.? don't drop the constraint.
+                        _ if self.is_dot_this(left) || self.is_dot_this(right) => false,
+
+                        // both sides are varibles, bind if:
+                        // - setup bindings to follow cycles in simplifier.
+                        (Value::Variable(l), Value::Variable(r))
+                        | (Value::Variable(l), Value::RestVariable(r))
+                        | (Value::RestVariable(l), Value::Variable(r))
+                        | (Value::RestVariable(l), Value::RestVariable(r)) => {
+                            match (self.vm.variable_state(l), self.vm.variable_state(r)) {
+                                (VariableState::Unbound, VariableState::Unbound) => todo!(),
+                                (VariableState::Unbound, VariableState::Cycle(_)) => {
+                                    todo!("****");
+                                    self.bind(l.clone(), right.clone());
+                                    true
+                                }
+                                (VariableState::Unbound, VariableState::Partial(_)) => todo!(),
+                                (VariableState::Unbound, VariableState::Bound(_)) => todo!(),
+                                (VariableState::Cycle(_), VariableState::Unbound) => todo!(),
+                                (VariableState::Cycle(_), VariableState::Cycle(_)) => {
+                                    if !self.is_bound(l) {
+                                        self.bind(l.clone(), right.clone());
+                                    }
+                                    if !self.is_bound(r) {
+                                        self.bind(r.clone(), left.clone());
+                                    }
+                                    true
+                                }
+                                (VariableState::Cycle(_), VariableState::Partial(_)) => todo!(),
+                                (VariableState::Cycle(_), VariableState::Bound(_)) => todo!(),
+                                (VariableState::Partial(_), VariableState::Unbound) => todo!(),
+                                (VariableState::Partial(_), VariableState::Cycle(_)) => todo!(),
+                                (VariableState::Partial(_), VariableState::Partial(_)) => {
+                                    if !self.is_bound(l) {
+                                        self.bind(l.clone(), right.clone());
+                                    }
+                                    if !self.is_bound(r) {
+                                        self.bind(r.clone(), left.clone());
+                                    }
+                                    true
+                                }
+                                (VariableState::Partial(_), VariableState::Bound(_)) => todo!(),
+                                (VariableState::Bound(_), VariableState::Unbound) => todo!(),
+                                (VariableState::Bound(_), VariableState::Cycle(_)) => todo!(),
+                                (VariableState::Bound(_), VariableState::Partial(_)) => todo!(),
+                                (VariableState::Bound(_), VariableState::Bound(_)) => todo!(),
+                            }
+                        }
+                        (Value::Variable(l), _) | (Value::RestVariable(l), _) => {
+                            match self.vm.variable_state(l) {
+                                VariableState::Unbound => {
+                                    self.bind(l.clone(), right.clone());
+                                    true
+                                }
+                                VariableState::Cycle(_) => {
+                                    self.bind(l.clone(), right.clone());
+                                    true
+                                }
+                                VariableState::Partial(_) => {
+                                    self.bind(l.clone(), right.clone());
+                                    true
+                                }
+                                VariableState::Bound(_) => todo!(),
+                            }
+                        }
+                        (_, Value::Variable(r)) | (_, Value::RestVariable(r)) => {
+                            match self.vm.variable_state(r) {
+                                VariableState::Unbound => todo!(),
+                                VariableState::Cycle(_) => todo!(),
+                                VariableState::Partial(_) => {
+                                    self.bind(r.clone(), left.clone());
+                                    true
+                                }
+                                VariableState::Bound(_) => todo!(),
+                            }
+                        }
+                        _ => false,
+                    }
+            }
+            _ => false,
         }
     }
 
