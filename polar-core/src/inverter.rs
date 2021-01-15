@@ -166,7 +166,12 @@ fn reduce_constraints(bindings: Vec<BindingStack>) -> (Bindings, Vec<Symbol>) {
                             x.merge_constraints(y.clone());
                             o.insert(value.clone_with_value(value!(x)));
                         }
-                        (existing, new) => todo!("Encountered new state while reducing constraints.\n  Existing: {} -> {}\n  New: {} -> {}", var, existing.to_polar(), var, new.to_polar()),
+                        (existing, new) => panic!(
+                            "Illegal state reached while reducing constraints for {}: {} → {}",
+                            var,
+                            existing.to_polar(),
+                            new.to_polar()
+                        ),
                     },
                     Entry::Vacant(v) => {
                         v.insert(value);
@@ -227,7 +232,8 @@ impl Runnable for Inverter {
                                 match self.vm.variable_state_at_point(&var, self.bsp) {
                                     VariableState::Unbound => vec![Binding(var, value)],
                                     VariableState::Bound(x) => {
-                                        todo!("BOUND: {} -> {}", var, x.to_polar())
+                                        assert_eq!(x, value, "inconsistent bindings");
+                                        vec![Binding(var, value)]
                                     }
                                     VariableState::Cycle(c) => {
                                         let constraint = cycle_constraints(c.clone())
@@ -238,11 +244,10 @@ impl Runnable for Inverter {
                                             .collect()
                                     }
                                     VariableState::Partial(e) => {
-                                        todo!("Partial in: {}\nPartial out: {}", e.to_polar(), value.to_polar());
                                         let e = e.clone_with_new_constraint(value);
                                         e.variables()
                                             .into_iter()
-                                            .map(|var| Binding(var.clone(), e.clone().into_term()))
+                                            .map(|var| Binding(var, e.clone().into_term()))
                                             .collect()
                                     }
                                 }
