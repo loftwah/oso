@@ -207,8 +207,8 @@ impl Runnable for Inverter {
                         // Reduce constraints converts it into a conjunct of negated results.
                         // AND[!result1, ...]
                         let (reduced, ordered_vars) = reduce_constraints(inverted);
-                        let simplified = simplify_bindings(reduced.clone(), &self.vm)
-                            .unwrap_or_else(Bindings::new);
+                        let simplified =
+                            simplify_bindings(reduced.clone()).unwrap_or_else(Bindings::new);
 
                         let simplified_keys = simplified.keys().collect::<HashSet<&Symbol>>();
                         let reduced_keys = reduced.keys().collect::<HashSet<&Symbol>>();

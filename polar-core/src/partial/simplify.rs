@@ -1,10 +1,8 @@
 use std::collections::HashSet;
 
 use crate::folder::{fold_operation, fold_term, Folder};
-use crate::formatting::ToPolarString;
 use crate::kb::Bindings;
 use crate::terms::{Operation, Operator, Symbol, Term, Value};
-use crate::vm::{PolarVirtualMachine, VariableState};
 
 use super::partial::{invert_operation, FALSE, TRUE};
 
@@ -81,8 +79,8 @@ fn simplify_trivial_constraint(this: Symbol, term: Term) -> Term {
     }
 }
 
-pub fn simplify_partial(var: &Symbol, term: Term, vm: &PolarVirtualMachine) -> Term {
-    let mut simplifier = Simplifier::new(var.clone(), vm);
+pub fn simplify_partial(var: &Symbol, term: Term) -> Term {
+    let mut simplifier = Simplifier::new(var.clone());
     let simplified = simplifier.simplify_partial(term);
     let simplified = simplify_trivial_constraint(var.clone(), simplified);
     if matches!(simplified.value(), Value::Expression(e) if e.operator != Operator::And) {
@@ -96,10 +94,10 @@ pub fn simplify_partial(var: &Symbol, term: Term, vm: &PolarVirtualMachine) -> T
 ///
 /// - For partials, simplify the constraint expressions.
 /// - For non-partials, deep deref. TODO(ap/gj): deep deref.
-pub fn simplify_bindings(bindings: Bindings, vm: &PolarVirtualMachine) -> Option<Bindings> {
+pub fn simplify_bindings(bindings: Bindings) -> Option<Bindings> {
     let mut unsatisfiable = false;
     let mut simplify = |var: Symbol, term: Term| {
-        let simplified = simplify_partial(&var, term, vm);
+        let simplified = simplify_partial(&var, term);
         match simplified.value().as_expression() {
             Ok(o) if o == &FALSE => unsatisfiable = true,
             _ => (),
@@ -132,13 +130,12 @@ pub fn simplify_bindings(bindings: Bindings, vm: &PolarVirtualMachine) -> Option
     }
 }
 
-pub struct Simplifier<'vm> {
+pub struct Simplifier {
     bindings: Bindings,
     this_var: Symbol,
-    vm: &'vm PolarVirtualMachine,
 }
 
-impl<'vm> Folder for Simplifier<'vm> {
+impl Folder for Simplifier {
     fn fold_term(&mut self, t: Term) -> Term {
         fold_term(self.deref(&t), self)
     }
@@ -194,17 +191,13 @@ impl<'vm> Folder for Simplifier<'vm> {
             // make a binding from, maybe throw it away, and fold the rest.
             Operator::And if o.args.len() > 1 => {
                 if let Some(i) = o.constraints().iter().position(|constraint| {
-                    // The constraints from `o` with `constraint` removed.
-                    let constraints_without_constraint = o.clone_with_constraints(
+                    let other_constraints = o.clone_with_constraints(
                         o.constraints()
                             .into_iter()
                             .filter(|r| r != constraint)
                             .collect(),
                     );
-
-                    // Variables referenced in the parent AND if we choose to remove this
-                    // constraint.
-                    let variables = constraints_without_constraint.variables();
+                    let variables = other_constraints.variables();
                     self.maybe_bind_constraint(constraint, variables)
                 }) {
                     o.args.remove(i);
@@ -219,12 +212,13 @@ impl<'vm> Folder for Simplifier<'vm> {
                 let bindings = self.bindings.clone();
                 let simplified = self.simplify_partial(o.args[0].clone());
                 self.bindings = bindings;
-                match simplified.value() {
-                    Value::Expression(e) => {
-                        invert_operation(e.clone())
-                    },
-                    _ => todo!("simplify negation"),
-                }
+                invert_operation(
+                    simplified
+                        .value()
+                        .as_expression()
+                        .expect("a simplified expression")
+                        .clone(),
+                )
             }
 
             // Default case.
@@ -233,12 +227,11 @@ impl<'vm> Folder for Simplifier<'vm> {
     }
 }
 
-impl<'vm> Simplifier<'vm> {
-    pub fn new(this_var: Symbol, vm: &'vm PolarVirtualMachine) -> Self {
+impl Simplifier {
+    pub fn new(this_var: Symbol) -> Self {
         Self {
             this_var,
             bindings: Bindings::new(),
-            vm,
         }
     }
 
@@ -286,9 +279,13 @@ impl<'vm> Simplifier<'vm> {
     /// Returns true when the constraint can be replaced with a binding, and makes the binding.
     ///
     /// Params:
-    ///     constraint: The constraint to consider removing.
-    ///     variables: The variables referenced in the parent AND by other terms (not constraint).
-    fn maybe_bind_constraint(&mut self, constraint: &Operation, variables: Vec<Symbol>) -> bool {
+    ///     constraint: The constraint to consider removing from its parent.
+    ///     other_variables: Variables referenced in the parent constraint by terms other than `constraint`.
+    fn maybe_bind_constraint(
+        &mut self,
+        constraint: &Operation,
+        other_variables: Vec<Symbol>,
+    ) -> bool {
         match constraint.operator {
             // A conjunction of TRUE with X is X, so drop TRUE.
             Operator::And if constraint.args.is_empty() => true,
@@ -307,7 +304,7 @@ impl<'vm> Simplifier<'vm> {
                         // Variable(l) = _this
                         (Value::Variable(l), _) | (Value::RestVariable(l), _)
                             if self.is_dot_this(right)
-                                && (self.is_this(right) || variables.contains(l)) =>
+                                && (self.is_this(right) || other_variables.contains(l)) =>
                         {
                             self.bind(l.clone(), right.clone());
                             true
@@ -315,7 +312,7 @@ impl<'vm> Simplifier<'vm> {
                         // _this = Variable(r)
                         (_, Value::Variable(r)) | (_, Value::RestVariable(r))
                             if self.is_dot_this(left)
-                                && (self.is_this(left) || variables.contains(r)) =>
+                                && (self.is_this(left) || other_variables.contains(r)) =>
                         {
                             self.bind(r.clone(), left.clone());
                             true
@@ -323,7 +320,7 @@ impl<'vm> Simplifier<'vm> {
                         // If either side is _this or _this.? don't drop the constraint.
                         _ if self.is_dot_this(left) || self.is_dot_this(right) => false,
 
-                        // both sides are variables, but neither is this. bind together
+                        // Both sides are variables, but neither is _this. Bind together.
                         (Value::Variable(l), Value::Variable(r))
                         | (Value::Variable(l), Value::RestVariable(r))
                         | (Value::RestVariable(l), Value::Variable(r))
@@ -332,24 +329,14 @@ impl<'vm> Simplifier<'vm> {
                             self.bind(r.clone(), left.clone());
                             true
                         }
-                        // one side is a variable, the other is a ground value.
+                        // One side is a variable, the other is a ground value. Bind it.
                         (Value::Variable(l), _) | (Value::RestVariable(l), _) => {
-                            match self.vm.variable_state(l) {
-                                VariableState::Bound(_) => unreachable!("This constraint is inconsistent and should have been removed in the VM."),
-                                _ => {
-                                    self.bind(l.clone(), right.clone());
-                                    true
-                                }
-                            }
+                            self.bind(l.clone(), right.clone());
+                            true
                         }
                         (_, Value::Variable(r)) | (_, Value::RestVariable(r)) => {
-                            match self.vm.variable_state(r) {
-                                VariableState::Bound(_) => unreachable!("This constraint is inconsistent and should have been removed in the VM."),
-                                _ => {
-                                    self.bind(r.clone(), left.clone());
-                                    true
-                                }
-                            }
+                            self.bind(r.clone(), left.clone());
+                            true
                         }
                         _ => false,
                     }
