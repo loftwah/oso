@@ -220,8 +220,10 @@ impl<'vm> Folder for Simplifier<'vm> {
                 let simplified = self.simplify_partial(o.args[0].clone());
                 self.bindings = bindings;
                 match simplified.value() {
-                    Value::Expression(e) => invert_operation(e.clone()),
-                    _ => todo!("negate {}", o.args[0].to_polar()),
+                    Value::Expression(e) => {
+                        invert_operation(e.clone())
+                    },
+                    _ => todo!("simplify negation"),
                 }
             }
 

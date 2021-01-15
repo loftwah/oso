@@ -1154,6 +1154,35 @@ mod test {
     }
 
     #[test]
+    fn test_negate_dot() -> TestResult {
+        let p = Polar::new();
+        p.load_str(
+            r#"f(x) if not (x.y = 1 and x.b = 2);"#
+        )?;
+
+        let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
+        assert_partial_expression!(next_binding(&mut q)?, "x", "1 != _this.y or 2 != _this.b");
+        assert_query_done!(q);
+
+        Ok(())
+    }
+
+    #[ignore]
+    #[test]
+    fn test_in_partial_2() -> TestResult {
+        let p = Polar::new();
+        p.load_str(
+            r#"f(x) if y in x and y = 1;
+        "#)?;
+
+        let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
+        assert_partial_expression!(next_binding(&mut q)?, "x", "y in _this and y = 1");
+        assert_query_done!(q);
+
+        Ok(())
+    }
+
+    #[test]
     fn partially_negated_constraints() -> TestResult {
         let p = Polar::new();
         p.load_str(
@@ -1172,7 +1201,8 @@ mod test {
                r(x) if not (x = 2 or x > 3 or x = 4) and x = 1;
                s(x) if not (x = 2 or x > 3 or x = 4) and x > 1;
                t(x) if not (x <= 0 or x <= 1 or x <= 2 or not (x > 3 or x > 4 or x > 5));
-               u(x) if not ((x <= 0 or x <= 1 or x <= 2 or not (x > 3 or x > 4 or x > 5)) and x = 6);"#,
+               u(x) if not ((x <= 0 or x <= 1 or x <= 2 or not (x > 3 or x > 4 or x > 5)) and x = 6);
+               v(x) if x = y and not (y = 1) and x = y;"#
         )?;
 
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
@@ -1248,6 +1278,34 @@ mod test {
             "x",
             "_this != 6 or _this > 3 or _this > 4 or _this > 5"
         );
+        assert_query_done!(q);
+
+        let mut v = p.new_query_from_term(term!(call!("v", [sym!("x")])), false);
+        assert_partial_expression!(
+            next_binding(&mut v)?,
+            "x",
+            "_this != 1"
+        );
+        assert_query_done!(v);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_negation_with_partial_before_negation() -> TestResult {
+        let p = Polar::new();
+        p.load_str(
+            r#"
+            f(x) if x > 1 and not (x < 0);
+        "#)?;
+
+        let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
+        assert_partial_expression!(
+            next_binding(&mut q)?,
+            "x",
+            "_this > 1 and _this >= 0"
+        );
+
         assert_query_done!(q);
 
         Ok(())
