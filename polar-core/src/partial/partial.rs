@@ -244,7 +244,10 @@ impl Operation {
     pub fn clone_with_new_constraint(&self, constraint: Term) -> Self {
         assert_eq!(self.operator, Operator::And);
         let mut new = self.clone();
-        new.args.push(constraint);
+        match constraint.value() {
+            Value::Expression(e) if e.operator == Operator::And => new.args.extend(e.args.clone()),
+            _ => new.args.push(constraint),
+        }
         new
     }
 
@@ -1156,9 +1159,7 @@ mod test {
     #[test]
     fn test_negate_dot() -> TestResult {
         let p = Polar::new();
-        p.load_str(
-            r#"f(x) if not (x.y = 1 and x.b = 2);"#
-        )?;
+        p.load_str(r#"f(x) if not (x.y = 1 and x.b = 2);"#)?;
 
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
         assert_partial_expression!(next_binding(&mut q)?, "x", "1 != _this.y or 2 != _this.b");
@@ -1171,9 +1172,7 @@ mod test {
     #[test]
     fn test_in_partial_2() -> TestResult {
         let p = Polar::new();
-        p.load_str(
-            r#"f(x) if y in x and y = 1;
-        "#)?;
+        p.load_str(r#"f(x) if y in x and y = 1;"#)?;
 
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
         assert_partial_expression!(next_binding(&mut q)?, "x", "y in _this and y = 1");
@@ -1281,31 +1280,19 @@ mod test {
         assert_query_done!(q);
 
         let mut v = p.new_query_from_term(term!(call!("v", [sym!("x")])), false);
-        assert_partial_expression!(
-            next_binding(&mut v)?,
-            "x",
-            "_this != 1"
-        );
+        assert_partial_expression!(next_binding(&mut v)?, "x", "_this != 1");
         assert_query_done!(v);
 
         Ok(())
     }
 
     #[test]
-    fn test_negation_with_partial_before_negation() -> TestResult {
+    fn test_partial_before_negation() -> TestResult {
         let p = Polar::new();
-        p.load_str(
-            r#"
-            f(x) if x > 1 and not (x < 0);
-        "#)?;
+        p.load_str(r#"f(x) if x > 1 and not (x < 0);"#)?;
 
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
-        assert_partial_expression!(
-            next_binding(&mut q)?,
-            "x",
-            "_this > 1 and _this >= 0"
-        );
-
+        assert_partial_expression!(next_binding(&mut q)?, "x", "_this > 1 and _this >= 0");
         assert_query_done!(q);
 
         Ok(())
