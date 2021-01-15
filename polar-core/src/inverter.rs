@@ -239,6 +239,7 @@ impl Runnable for Inverter {
                                             .collect()
                                     }
                                     VariableState::Partial(e) => {
+                                        todo!("Partial in: {}\nPartial out: {}", e.to_polar(), value.to_polar());
                                         let e = e.clone_with_new_constraint(value);
                                         e.variables()
                                             .into_iter()
