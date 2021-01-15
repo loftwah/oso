@@ -1,4 +1,3 @@
-// TODO(gj): fix term! macro lineage
 use std::cell::RefCell;
 use std::collections::hash_map::Entry;
 use std::collections::HashSet;
