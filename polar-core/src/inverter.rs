@@ -9,7 +9,6 @@ use crate::events::QueryEvent;
 use crate::folder::{fold_value, Folder};
 use crate::formatting::ToPolarString;
 use crate::kb::Bindings;
-use crate::partial::simplify_bindings;
 use crate::runnable::Runnable;
 use crate::terms::{Operation, Operator, Symbol, Term, Value};
 use crate::vm::{
@@ -203,7 +202,6 @@ impl Runnable for Inverter {
                             .drain(..)
                             .collect::<Vec<BindingStack>>()
                             .into_iter()
-                            // Inverts each result
                             .map(|bindings| invert_partials(bindings, &self.vm, self.bsp))
                             .collect();
 
@@ -211,49 +209,17 @@ impl Runnable for Inverter {
                         // Reduce constraints converts it into a conjunct of negated results.
                         // AND[!result1, ...]
                         let (reduced, ordered_vars) = reduce_constraints(inverted);
-                        let simplified =
-                            simplify_bindings(reduced.clone()).unwrap_or_else(Bindings::new);
-
-                        let simplified_keys = simplified.keys().collect::<HashSet<&Symbol>>();
                         let reduced_keys = reduced.keys().collect::<HashSet<&Symbol>>();
                         let ordered_keys = ordered_vars.iter().collect::<HashSet<&Symbol>>();
-
-                        assert_eq!(simplified_keys, reduced_keys);
                         assert_eq!(reduced_keys, ordered_keys);
 
-                        // Figure out which bindings should go into parent VM's binding
-                        // stack.
-                        let new_bindings = ordered_vars.into_iter().flat_map(|var| {
+                        // Figure out which bindings should go into parent VM's binding stack.
+                        let new_bindings = ordered_vars.into_iter().map(|var| {
                             // We have at least one binding to return, so succeed.
                             result = true;
 
-                            let value = simplified[&var].clone();
-                            if let Value::Expression(_) = value.value() {
-                                match self.vm.variable_state_at_point(&var, self.bsp) {
-                                    VariableState::Unbound => vec![Binding(var, value)],
-                                    VariableState::Bound(x) => {
-                                        assert_eq!(x, value, "inconsistent bindings");
-                                        vec![Binding(var, value)]
-                                    }
-                                    VariableState::Cycle(c) => {
-                                        let constraint = cycle_constraints(c.clone())
-                                            .clone_with_new_constraint(value)
-                                            .into_term();
-                                        c.into_iter()
-                                            .map(|v| Binding(v, constraint.clone()))
-                                            .collect()
-                                    }
-                                    VariableState::Partial(e) => {
-                                        let e = e.clone_with_new_constraint(value);
-                                        e.variables()
-                                            .into_iter()
-                                            .map(|var| Binding(var, e.clone().into_term()))
-                                            .collect()
-                                    }
-                                }
-                            } else {
-                                vec![Binding(var, value)]
-                            }
+                            let value = reduced[&var].clone();
+                            Binding(var, value)
                         });
                         self.bindings.borrow_mut().extend(new_bindings);
                     }

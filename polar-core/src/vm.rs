@@ -180,20 +180,23 @@ pub type Queries = TermList;
 pub enum VariableState {
     Unbound,
     Bound(Term),
-    Cycle(Vec<Symbol>),
+    Cycle(Symbol),
     Partial(Operation),
 }
 
 /// Represent each binding in a cycle as a unification constraint.
 // TODO(gj): put this in an impl block on VariableState?
-pub fn cycle_constraints(cycle: Vec<Symbol>) -> Operation {
-    let mut constraints = op!(And);
+pub fn cycle_constraints(cycle: Symbol) -> Operation {
+    dbg!(cycle);
+    op!(And)
+    /* let mut constraints = op!(And);
     for (x, y) in cycle.iter().zip(cycle.iter().skip(1)) {
         constraints.add_constraint(op!(Unify, term!(x.clone()), term!(y.clone())));
     }
-    constraints
+    constraints */
 }
 
+/// Compare two numeric (or boolean) terms.
 // TODO(ap): don't panic.
 pub fn compare(op: Operator, left: &Term, right: &Term) -> bool {
     // Coerce booleans to integers.
@@ -788,15 +791,18 @@ impl PolarVirtualMachine {
 
     /// Investigate the state of a variable at some point and return a variable state variant.
     pub fn variable_state_at_point(&self, variable: &Symbol, bsp: usize) -> VariableState {
-        let mut path = vec![variable];
-        while let Some(value) = self.value(path.last().unwrap(), bsp) {
+        let mut seen = HashSet::new();
+        let mut variable = variable;
+        while let Some(value) = self.value(variable, bsp) {
+            seen.insert(variable);
+            eprintln!("{} → {}", variable, value.to_polar());
             match value.value() {
                 Value::Expression(e) => return VariableState::Partial(e.clone()),
                 Value::Variable(v) | Value::RestVariable(v) => {
-                    if v == variable {
-                        return VariableState::Cycle(path.into_iter().cloned().collect());
+                    if seen.contains(v) {
+                        return VariableState::Cycle(variable.clone());
                     } else {
-                        path.push(v);
+                        variable = v;
                     }
                 }
                 _ => return VariableState::Bound(value.clone()),
@@ -1331,7 +1337,7 @@ impl PolarVirtualMachine {
                 // TODO(gj): Ensure `op!(And) matches X{}` doesn't die after these changes.
 
                 let var = left.value().as_symbol()?;
-                let simplified = simplify_partial(var, operation.clone().into_term());
+                let simplified = simplify_partial(var, &self.bindings(true));
                 let simplified = simplified.value().as_expression()?;
                 let lhs_of_matches = simplified
                     .constraints()
@@ -2458,44 +2464,34 @@ impl PolarVirtualMachine {
                     self.bind(r, left.clone());
                 }
             }
-            (VariableState::Cycle(c), VariableState::Unbound) => {
+            (VariableState::Cycle(ref c), VariableState::Unbound) => {
                 // Left is in a cycle. Extend it to include right.
-                let p = c.last().unwrap();
-                assert_ne!(p, l);
-                self.bind(p, right.clone());
-                self.bind(r, left.clone());
+                self.bind(r, self.value(c, self.bsp()).unwrap().clone());
+                self.bind(c, right.clone());
             }
-            (VariableState::Unbound, VariableState::Cycle(d)) => {
+            (VariableState::Unbound, VariableState::Cycle(ref d)) => {
                 // Right is in a cycle. Extend it to include left.
-                let q = d.last().unwrap();
-                assert_ne!(q, r);
-                self.bind(q, left.clone());
-                self.bind(l, right.clone());
+                self.bind(l, self.value(d, self.bsp()).unwrap().clone());
+                self.bind(d, left.clone());
             }
             (VariableState::Cycle(c), VariableState::Cycle(d)) => {
                 // Both variables are in cycles.
-                let h = c.iter().collect::<HashSet<&Symbol>>();
-                let i = d.iter().collect::<HashSet<&Symbol>>();
-                if h.intersection(&i).next().is_some() {
-                    // The cycles must be the same. Do nothing.
-                    assert_eq!(h, i);
+                if c == d {
+                    // The cycles are the same. Do nothing.
+                    todo!("Same cycle: {}", c)
                 } else {
-                    // Join the two cycles.
-                    let p = c.last().unwrap();
-                    let q = d.last().unwrap();
-                    assert_ne!(p, l);
-                    assert_ne!(q, r);
-                    self.bind(p, right.clone());
-                    self.bind(q, left.clone());
+                    // Join the cycles.
+                    self.bind(l, term!(d));
+                    self.bind(r, term!(c));
                 }
             }
-            (VariableState::Cycle(_), VariableState::Bound(y)) => {
+            (VariableState::Cycle(ref c), VariableState::Bound(y)) => {
                 // Ground out the cycle.
-                self.bind(l, y);
+                self.bind(c, y);
             }
-            (VariableState::Bound(x), VariableState::Cycle(_)) => {
+            (VariableState::Bound(x), VariableState::Cycle(ref d)) => {
                 // Ground out the cycle.
-                self.bind(r, x);
+                self.bind(d, x);
             }
 
             // Expressions.
@@ -3058,7 +3054,7 @@ impl Runnable for PolarVirtualMachine {
             bindings = bindings
                 .clone()
                 .into_iter()
-                .filter(|(var, _)| !var.is_temporary_var())
+                //.filter(|(var, _)| !var.is_temporary_var())
                 .map(|(var, value)| (var.clone(), sub_this(var, value)))
                 .collect();
         }
@@ -3245,36 +3241,21 @@ mod tests {
 
         // 1-cycle.
         vm.bind(&x, term!(x.clone()));
-        assert_eq!(vm.variable_state(&x), VariableState::Cycle(vec![x.clone()]));
+        assert_eq!(vm.variable_state(&x), VariableState::Cycle(x.clone()));
 
         // 2-cycle.
         vm.bind(&x, term!(y.clone()));
         vm.bind(&y, term!(x.clone()));
-        assert_eq!(
-            vm.variable_state(&x),
-            VariableState::Cycle(vec![x.clone(), y.clone()])
-        );
-        assert_eq!(
-            vm.variable_state(&y),
-            VariableState::Cycle(vec![y.clone(), x.clone()])
-        );
+        assert_eq!(vm.variable_state(&x), VariableState::Cycle(y.clone()));
+        assert_eq!(vm.variable_state(&y), VariableState::Cycle(x.clone()));
 
         // 3-cycle.
         vm.bind(&x, term!(y.clone()));
         vm.bind(&y, term!(z.clone()));
         vm.bind(&z, term!(x.clone()));
-        assert_eq!(
-            vm.variable_state(&x),
-            VariableState::Cycle(vec![x.clone(), y.clone(), z.clone()])
-        );
-        assert_eq!(
-            vm.variable_state(&y),
-            VariableState::Cycle(vec![y.clone(), z.clone(), x.clone()])
-        );
-        assert_eq!(
-            vm.variable_state(&z),
-            VariableState::Cycle(vec![z.clone(), x.clone(), y])
-        );
+        assert_eq!(vm.variable_state(&x), VariableState::Cycle(z.clone()));
+        assert_eq!(vm.variable_state(&y), VariableState::Cycle(z.clone()));
+        assert_eq!(vm.variable_state(&z), VariableState::Cycle(z.clone()));
 
         // Expression.
         vm.bind(&x, term!(op!(And)));

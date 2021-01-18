@@ -79,9 +79,9 @@ fn simplify_trivial_constraint(this: Symbol, term: Term) -> Term {
     }
 }
 
-pub fn simplify_partial(var: &Symbol, term: Term) -> Term {
-    let mut simplifier = Simplifier::new(var.clone());
-    let simplified = simplifier.simplify_partial(term);
+pub fn simplify_partial(var: &Symbol, bindings: &Bindings) -> Term {
+    let mut simplifier = Simplifier::new(var.clone(), bindings.clone());
+    let simplified = simplifier.simplify_partial(bindings[var].clone());
     let simplified = simplify_trivial_constraint(var.clone(), simplified);
     if matches!(simplified.value(), Value::Expression(e) if e.operator != Operator::And) {
         op!(And, simplified).into_term()
@@ -96,8 +96,8 @@ pub fn simplify_partial(var: &Symbol, term: Term) -> Term {
 /// - For non-partials, deep deref. TODO(ap/gj): deep deref.
 pub fn simplify_bindings(bindings: Bindings) -> Option<Bindings> {
     let mut unsatisfiable = false;
-    let mut simplify = |var: Symbol, term: Term| {
-        let simplified = simplify_partial(&var, term);
+    let mut simplify = |var: Symbol| {
+        let simplified = simplify_partial(&var, &bindings);
         match simplified.value().as_expression() {
             Ok(o) if o == &FALSE => unsatisfiable = true,
             _ => (),
@@ -110,14 +110,7 @@ pub fn simplify_bindings(bindings: Bindings) -> Option<Bindings> {
         .map(|(var, value)| match value.value() {
             Value::Expression(o) => {
                 assert_eq!(o.operator, Operator::And);
-                (var.clone(), simplify(var.clone(), value.clone()))
-            }
-            Value::Variable(v) | Value::RestVariable(v)
-                if v.is_temporary_var()
-                    && bindings.contains_key(v)
-                    && matches!(bindings[v].value(), Value::Variable(_) | Value::RestVariable(_)) =>
-            {
-                (var.clone(), bindings[v].clone())
+                (var.clone(), simplify(var.clone()))
             }
             _ => (var.clone(), value.clone()),
         })
@@ -228,11 +221,8 @@ impl Folder for Simplifier {
 }
 
 impl Simplifier {
-    pub fn new(this_var: Symbol) -> Self {
-        Self {
-            this_var,
-            bindings: Bindings::new(),
-        }
+    pub fn new(this_var: Symbol, bindings: Bindings) -> Self {
+        Self { this_var, bindings }
     }
 
     pub fn bind(&mut self, var: Symbol, value: Term) {
@@ -248,11 +238,21 @@ impl Simplifier {
     }
 
     pub fn deref(&self, term: &Term) -> Term {
-        match term.value() {
-            Value::Variable(var) | Value::RestVariable(var) => {
-                self.bindings.get(var).unwrap_or(term).clone()
+        let mut seen = HashSet::new();
+        let mut term = term;
+        loop {
+            seen.insert(term);
+            match term.value() {
+                Value::Variable(var) | Value::RestVariable(var) => {
+                    let value = self.bindings.get(var).unwrap_or(term);
+                    if seen.contains(value) {
+                        return term.clone();
+                    } else {
+                        term = value;
+                    }
+                }
+                _ => return term.clone(),
             }
-            _ => term.clone(),
         }
     }
 
