@@ -130,6 +130,11 @@ pub struct Simplifier {
 
 impl Folder for Simplifier {
     fn fold_term(&mut self, t: Term) -> Term {
+        if let Ok(v) = t.value().as_symbol() {
+            if v == &self.this_var || matches!(self.deref(&t).value(), Value::Expression(e) if e.operator == Operator::And) {
+                return t
+            }
+        }
         fold_term(self.deref(&t), self)
     }
 
@@ -354,7 +359,6 @@ impl Simplifier {
                 break;
             }
             term = new;
-            self.bindings.clear();
         }
         new
     }

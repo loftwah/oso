@@ -18,7 +18,7 @@ use crate::kb::*;
 use crate::lexer::loc_to_pos;
 use crate::messages::*;
 use crate::numerics::*;
-use crate::partial::{simplify_bindings, simplify_partial, sub_this, IsaConstraintCheck};
+use crate::partial::{simplify_bindings, sub_this, IsaConstraintCheck};
 use crate::rewrites::Renamer;
 use crate::rules::*;
 use crate::runnable::Runnable;
@@ -1335,10 +1335,7 @@ impl PolarVirtualMachine {
                 // involving a particular variable.
                 // TODO(gj): Ensure `op!(And) matches X{}` doesn't die after these changes.
 
-                let var = left.value().as_symbol()?;
-                let simplified = simplify_partial(var, &self.bindings(true));
-                let simplified = simplified.value().as_expression()?;
-                let lhs_of_matches = simplified
+                let lhs_of_matches = operation
                     .constraints()
                     .into_iter()
                     .find_map(|c| {
@@ -1366,7 +1363,7 @@ impl PolarVirtualMachine {
 
                 let new_matches = op!(Isa, lhs_of_matches, right.clone());
                 let runnable = Box::new(IsaConstraintCheck::new(
-                    simplified.constraints(),
+                    operation.constraints(),
                     new_matches,
                 ));
 
