@@ -57,7 +57,7 @@ impl PartialInverter {
     fn invert_operation(&self, o: &Operation) -> Operation {
         // Compute csp from old_value vs. p.
         let csp = match &self.old_state {
-            VariableState::Partial(e) => e.constraints().len(),
+            VariableState::Partial(e, _) => e.constraints().len(),
             _ => 0,
         };
         o.clone_with_constraints(o.inverted_constraints(csp))
@@ -120,9 +120,9 @@ fn invert_partials(bindings: BindingStack, vm: &PolarVirtualMachine, bsp: usize)
             // - post-inversion but pre-simplification partial (>2 constraints)
             // - post-inversion post-simplification partial (>2 constraints)
             //
-            VariableState::Partial(e) => {
+            VariableState::Partial(e, v) => {
                 let constraints =
-                    PartialInverter::new(var.clone(), VariableState::Partial(e.clone()))
+                    PartialInverter::new(v.clone(), VariableState::Partial(e.clone(), v))
                         .fold_term(value);
                 match constraints.value() {
                     Value::Expression(f) => {

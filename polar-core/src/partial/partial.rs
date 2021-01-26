@@ -894,11 +894,10 @@ mod test {
         assert_query_done!(q);
 
         let mut q = p.new_query_from_term(term!(call!("j", [sym!("y")])), false);
-        assert_partial_expression!(next_binding(&mut q)?, "y", "_this = 1 and _this == 1");
+        assert_partial_expression!(next_binding(&mut q)?, "y", "1");
         assert_query_done!(q);
 
         let mut q = p.new_query_from_term(term!(call!("k", [sym!("y")])), false);
-        assert_partial_expression!(next_binding(&mut q)?, "y", "_this = 2 and _this == 1");
         assert_query_done!(q);
         Ok(())
     }
