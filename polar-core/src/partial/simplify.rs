@@ -1,50 +1,49 @@
 use std::collections::HashSet;
 
 use crate::folder::{fold_operation, fold_term, Folder};
+use crate::formatting::ToPolarString;
 use crate::kb::Bindings;
 use crate::terms::{Operation, Operator, Symbol, Term, Value};
 
 use super::partial::{invert_operation, FALSE, TRUE};
 
 struct VariableSubber {
-    this_var: Symbol,
+    from_var: Symbol,
+    to_var: Symbol,
 }
 
 impl VariableSubber {
-    pub fn new(this_var: Symbol) -> Self {
-        Self { this_var }
+    fn new(from_var: Symbol, to_var: Symbol) -> Self {
+        Self { from_var, to_var }
     }
 }
 
 impl Folder for VariableSubber {
-    fn fold_variable(&mut self, v: Symbol) -> Symbol {
-        if v == self.this_var {
-            sym!("_this")
+    fn fold_variable(&mut self, var: Symbol) -> Symbol {
+        if var == self.from_var {
+            self.to_var.clone()
         } else {
-            v
+            var
         }
     }
 
-    fn fold_rest_variable(&mut self, v: Symbol) -> Symbol {
-        if v == self.this_var {
-            sym!("_this")
+    fn fold_rest_variable(&mut self, var: Symbol) -> Symbol {
+        if var == self.from_var {
+            self.to_var.clone()
         } else {
-            v
+            var
         }
     }
 }
 
-/// Substitute `sym!("_this")` for a variable in a partial.
-pub fn sub_this(this: Symbol, term: Term) -> Term {
-    if term
-        .value()
-        .as_symbol()
-        .map(|s| s == &this)
-        .unwrap_or(false)
-    {
-        return term;
-    }
-    fold_term(term, &mut VariableSubber::new(this))
+/// Substitute one variable for another in a term.
+fn sub_var(from_var: Symbol, to_var: Symbol, term: Term) -> Term {
+    fold_term(term, &mut VariableSubber::new(from_var, to_var))
+}
+
+/// Substitute `sym!("_this")` for a variable in a term.
+fn sub_this(this: Symbol, term: Term) -> Term {
+    sub_var(this, sym!("_this"), term)
 }
 
 /// Turn `_this = x` into `x` when it's ground.
@@ -79,7 +78,7 @@ fn simplify_trivial_constraint(this: Symbol, term: Term) -> Term {
     }
 }
 
-pub fn simplify_partial(var: &Symbol, bindings: &Bindings) -> Term {
+fn simplify_partial(var: &Symbol, bindings: &Bindings) -> Term {
     let mut simplifier = Simplifier::new(var.clone(), bindings.clone());
     let simplified = simplifier.simplify_partial(bindings[var].clone());
     let simplified = simplify_trivial_constraint(var.clone(), simplified);
@@ -102,18 +101,38 @@ pub fn simplify_bindings(bindings: Bindings) -> Option<Bindings> {
             Ok(o) if o == &FALSE => unsatisfiable = true,
             _ => (),
         }
-        simplified
+        sub_this(var, simplified)
     };
 
     let bindings: Bindings = bindings
         .iter()
-        .map(|(var, value)| match value.value() {
-            Value::Expression(o) => {
-                assert_eq!(o.operator, Operator::And);
-                (var.clone(), simplify(var.clone()))
+        .map(|(var, value)| {
+            eprintln!("* Simplifying {} ← {}", var, value.to_polar());
+            //let mut seen = HashSet::new();
+            let mut value = value.clone();
+            loop {
+                match value.value() {
+                    Value::Expression(o) => {
+                        assert_eq!(o.operator, Operator::And);
+                        return (var.clone(), simplify(var.clone()));
+                    }
+                    Value::Variable(v) | Value::RestVariable(v)
+                        if v != var && bindings.get(v).is_some() =>
+                    {
+                        eprintln!(
+                            "* Chasing {}: {} → {}",
+                            var,
+                            value.to_polar(),
+                            &bindings[v].to_polar()
+                        );
+                        value = sub_var(var.clone(), v.clone(), bindings[v].clone());
+                        //value = bindings[v].clone();
+                    }
+                    _ => return (var.clone(), value.clone()),
+                }
             }
-            _ => (var.clone(), value.clone()),
         })
+        //.filter(|(var, _)| !var.is_temporary_var())
         .collect();
 
     if unsatisfiable {
@@ -123,7 +142,7 @@ pub fn simplify_bindings(bindings: Bindings) -> Option<Bindings> {
     }
 }
 
-pub struct Simplifier {
+struct Simplifier {
     bindings: Bindings,
     this_var: Symbol,
 }
@@ -131,8 +150,10 @@ pub struct Simplifier {
 impl Folder for Simplifier {
     fn fold_term(&mut self, t: Term) -> Term {
         if let Ok(v) = t.value().as_symbol() {
-            if v == &self.this_var || matches!(self.deref(&t).value(), Value::Expression(e) if e.operator == Operator::And) {
-                return t
+            if v == &self.this_var
+                || matches!(self.deref(&t).value(), Value::Expression(e) if e.operator == Operator::And)
+            {
+                return t;
             }
         }
         fold_term(self.deref(&t), self)
@@ -243,14 +264,12 @@ impl Simplifier {
     }
 
     pub fn deref(&self, term: &Term) -> Term {
-        let mut seen = HashSet::new();
         let mut term = term;
         loop {
-            seen.insert(term);
             match term.value() {
                 Value::Variable(var) | Value::RestVariable(var) => {
                     let value = self.bindings.get(var).unwrap_or(term);
-                    if seen.contains(value) {
+                    if value.value().as_symbol().map(|v| v == var).unwrap_or(false) {
                         return term.clone();
                     } else {
                         term = value;
@@ -311,6 +330,7 @@ impl Simplifier {
                             if self.is_dot_this(right)
                                 && (self.is_this(right) || other_variables.contains(l)) =>
                         {
+                            eprintln!("*** Binding {} ← {}", l, right.to_polar());
                             self.bind(l.clone(), right.clone());
                             true
                         }
@@ -319,6 +339,7 @@ impl Simplifier {
                             if self.is_dot_this(left)
                                 && (self.is_this(left) || other_variables.contains(r)) =>
                         {
+                            eprintln!("*** Binding {} ← {}", r, left.to_polar());
                             self.bind(r.clone(), left.clone());
                             true
                         }
@@ -354,7 +375,9 @@ impl Simplifier {
     pub fn simplify_partial(&mut self, mut term: Term) -> Term {
         let mut new;
         loop {
+            eprintln!("* Simplifying partial w/r/t {}: {} →", self.this_var, term.to_polar());
             new = self.fold_term(term.clone());
+            eprintln!("* {}", new.to_polar());
             if new == term {
                 break;
             }

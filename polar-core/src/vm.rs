@@ -18,7 +18,7 @@ use crate::kb::*;
 use crate::lexer::loc_to_pos;
 use crate::messages::*;
 use crate::numerics::*;
-use crate::partial::{simplify_bindings, sub_this, IsaConstraintCheck};
+use crate::partial::{simplify_bindings, IsaConstraintCheck};
 use crate::rewrites::Renamer;
 use crate::rules::*;
 use crate::runnable::Runnable;
@@ -639,6 +639,7 @@ impl PolarVirtualMachine {
         for var in o.variables() {
             match self.variable_state(&var) {
                 VariableState::Bound(_) => (),
+                VariableState::Cycle(ref c) => self.bind(c, o.clone().into_term()),
                 _ => self.bind(&var, o.clone().into_term()),
             }
         }
@@ -682,10 +683,15 @@ impl PolarVirtualMachine {
                         e.merge_constraints(cycle_constraints(c));
                         self.constrain(&e.clone_with_new_constraint(term.clone()))?;
                     }
-                    (VariableState::Cycle(c), VariableState::Unbound)
-                    | (VariableState::Unbound, VariableState::Cycle(c)) => {
-                        let e = cycle_constraints(c);
-                        self.constrain(&e.clone_with_new_constraint(term.clone()))?;
+                    (VariableState::Cycle(c), VariableState::Unbound) => {
+                        //self.bind(r, left.clone());
+                        let e = cycle_constraints(c.clone());
+                        self.bind(&c, e.clone_with_new_constraint(term.clone()).into_term());
+                    }
+                    (VariableState::Unbound, VariableState::Cycle(d)) => {
+                        //self.bind(l, right.clone());
+                        let f = cycle_constraints(d.clone());
+                        self.bind(&d, f.clone_with_new_constraint(term.clone()).into_term());
                     }
                     (VariableState::Bound(x), _) => {
                         panic!(
@@ -791,14 +797,12 @@ impl PolarVirtualMachine {
 
     /// Investigate the state of a variable at some point and return a variable state variant.
     pub fn variable_state_at_point(&self, variable: &Symbol, bsp: usize) -> VariableState {
-        let mut seen = HashSet::new();
         let mut variable = variable;
         while let Some(value) = self.value(variable, bsp) {
-            seen.insert(variable);
             match value.value() {
                 Value::Expression(e) => return VariableState::Partial(e.clone(), variable.clone()),
                 Value::Variable(v) | Value::RestVariable(v) => {
-                    if seen.contains(v) {
+                    if v == variable {
                         return VariableState::Cycle(variable.clone());
                     } else {
                         variable = v;
@@ -1331,15 +1335,11 @@ impl PolarVirtualMachine {
                 self.constrain(&operation.clone_with_new_constraint(op.into_term()))?;
             }
             Value::Pattern(Pattern::Instance(InstanceLiteral { fields, tag })) => {
-                // TODO(gj): assert that a simplified expression contains at most 1 unification
-                // involving a particular variable.
-                // TODO(gj): Ensure `op!(And) matches X{}` doesn't die after these changes.
-
                 let lhs_of_matches = operation
                     .constraints()
                     .into_iter()
                     .find_map(|c| {
-                        // If the simplified partial includes a `var = dot_op` constraint, use the
+                        // If the partial includes a `var = dot_op` constraint, use the
                         // dot op as the LHS of the matches.
                         if c.operator != Operator::Unify {
                             None
@@ -2300,7 +2300,10 @@ impl PolarVirtualMachine {
                     VariableState::Bound(value) => {
                         self.push_goal(Goal::Unify { left: value, right })?;
                     }
-                    VariableState::Partial(expr, var) => {
+                    VariableState::Cycle(var) => {
+                        self.bind(&var, right);
+                    }
+                    VariableState::Partial(expr, _var) => {
                         if let Some(grounded) = expr.ground(var.clone(), right.clone()) {
                             self.bind(&var, right);
                             self.constrain(&grounded)?;
@@ -2453,32 +2456,39 @@ impl PolarVirtualMachine {
 
             // Cycles: one or more variables are bound together.
             (VariableState::Unbound, VariableState::Unbound) => {
-                // Both variables are unbound. Bind them in a new cycle,
-                // but do not create 1-cycles.
-                if l != r {
+                // Both variables are unbound. Bind one of them in a 1-cycle,
+                // and the other to that. The 1-cycle represents the end of
+                // a chain of bindings.
+                if l == r {
                     self.bind(l, right.clone());
+                } else if !r.is_temporary_var() {
+                    self.bind(r, right.clone());
+                    self.bind(l, right.clone());
+                } else {
+                    self.bind(l, left.clone());
                     self.bind(r, left.clone());
                 }
             }
-            (VariableState::Cycle(ref c), VariableState::Unbound) => {
+            (VariableState::Cycle(_), VariableState::Unbound) => {
                 // Left is in a cycle. Extend it to include right.
-                self.bind(r, self.value(c, self.bsp()).unwrap().clone());
-                self.bind(c, right.clone());
+                self.bind(r, left.clone());
             }
-            (VariableState::Unbound, VariableState::Cycle(ref d)) => {
+            (VariableState::Unbound, VariableState::Cycle(_)) => {
                 // Right is in a cycle. Extend it to include left.
-                self.bind(l, self.value(d, self.bsp()).unwrap().clone());
-                self.bind(d, left.clone());
+                self.bind(l, right.clone());
             }
-            (VariableState::Cycle(c), VariableState::Cycle(d)) => {
+            (VariableState::Cycle(ref c), VariableState::Cycle(ref d)) => {
                 // Both variables are in cycles.
                 if c == d {
                     // The cycles are the same. Do nothing.
                     todo!("Same cycle: {}", c)
                 } else {
                     // Join the cycles.
-                    self.bind(l, term!(d));
-                    self.bind(r, term!(c));
+                    if !d.is_temporary_var() {
+                        self.bind(c, right.clone());
+                    } else {
+                        self.bind(d, left.clone());
+                    }
                 }
             }
             (VariableState::Cycle(ref c), VariableState::Bound(y)) => {
@@ -2500,7 +2510,7 @@ impl PolarVirtualMachine {
                 self.add_constraint(&op!(Unify, left_value, right.clone()).into_term())?;
             }
             (VariableState::Partial(_, _), _) | (_, VariableState::Partial(_, _)) => {
-                // Add a unification constraint with both partials.
+                // Add a unification constraint with both variables.
                 self.add_constraint(&op!(Unify, left.clone(), right.clone()).into_term())?;
             }
         }
@@ -3051,7 +3061,7 @@ impl Runnable for PolarVirtualMachine {
                 .clone()
                 .into_iter()
                 //.filter(|(var, _)| !var.is_temporary_var())
-                .map(|(var, value)| (var.clone(), sub_this(var, value)))
+                //.map(|(var, value)| (var.clone(), sub_this(var, value)))
                 .collect();
         }
 
@@ -3240,15 +3250,15 @@ mod tests {
         assert_eq!(vm.variable_state(&x), VariableState::Cycle(x.clone()));
 
         // 2-cycle.
-        vm.bind(&x, term!(y.clone()));
         vm.bind(&y, term!(x.clone()));
-        assert_eq!(vm.variable_state(&x), VariableState::Cycle(y.clone()));
+        vm.bind(&x, term!(x.clone()));
+        assert_eq!(vm.variable_state(&x), VariableState::Cycle(x.clone()));
         assert_eq!(vm.variable_state(&y), VariableState::Cycle(x.clone()));
 
         // 3-cycle.
         vm.bind(&x, term!(y.clone()));
         vm.bind(&y, term!(z.clone()));
-        vm.bind(&z, term!(x.clone()));
+        vm.bind(&z, term!(z.clone()));
         assert_eq!(vm.variable_state(&x), VariableState::Cycle(z.clone()));
         assert_eq!(vm.variable_state(&y), VariableState::Cycle(z.clone()));
         assert_eq!(vm.variable_state(&z), VariableState::Cycle(z.clone()));

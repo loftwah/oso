@@ -952,12 +952,7 @@ mod test {
         let p = Polar::new();
         p.load_str("f(x) if x = x + 0;")?;
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
-        assert_partial_expressions!(
-            next_binding(&mut q)?,
-            "x" => "_this + 0 = _op_1_5",
-            "_x_4" => "_this + 0 = _op_1_5",
-            "_op_1_5" => "_x_4 + 0 = _this"
-        );
+        assert_partial_expressions!(next_binding(&mut q)?, "x" => "_this + 0 = _this");
         assert_query_done!(q);
         Ok(())
     }
@@ -1460,8 +1455,7 @@ mod test {
         )?;
         let mut q = p.new_query_from_term(term!(call!("f", [sym!("x")])), false);
         let next = next_binding(&mut q)?;
-        assert_eq!(next[&sym!("x")], term!(sym!("_x_2")));
-        assert_eq!(next[&sym!("_x_2")], term!(sym!("x")));
+        assert_eq!(next[&sym!("x")], term!(sym!("x")));
         assert_query_done!(q);
 
         let mut q = p.new_query_from_term(term!(call!("g", [sym!("x")])), false);
@@ -1575,7 +1569,7 @@ mod test {
         assert_query_done!(q);
 
         let mut q = p.new_query_from_term(term!(call!("m", [sym!("x")])), false);
-        assert_partial_expressions!(next_binding(&mut q)?, "x" => "1 in _y_43", "_y_43" => "1 in _this");
+        assert_partial_expressions!(next_binding(&mut q)?, "x" => "1 in _this");
         assert_query_done!(q);
         Ok(())
     }
