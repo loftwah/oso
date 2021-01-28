@@ -359,6 +359,17 @@ pub mod to_polar {
         fn to_polar(&self) -> String;
     }
 
+    impl ToPolarString for std::collections::HashMap<Symbol, Term> {
+        fn to_polar(&self) -> String {
+            let fields = self
+                .iter()
+                .map(|(k, v)| format!("{}: {}", k.to_polar(), v.to_polar()))
+                .collect::<Vec<String>>()
+                .join(", ");
+            format!("{{{}}}", fields)
+        }
+    }
+
     impl ToPolarString for Dictionary {
         fn to_polar(&self) -> String {
             let fields = self
@@ -611,6 +622,9 @@ pub mod to_polar {
                 Value::List(l) => format!("[{}]", format_args(Operator::And, l, ", "),),
                 Value::Variable(s) => s.to_polar(),
                 Value::RestVariable(s) => format!("*{}", s.to_polar()),
+                Value::PartialRef(s) => {
+                    format!("&{}", s.partial_name.to_polar())
+                }
                 Value::Expression(e) => e.to_polar(),
             }
         }

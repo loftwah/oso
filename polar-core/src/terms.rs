@@ -74,6 +74,14 @@ impl Symbol {
     pub fn is_this_var(&self) -> bool {
         self.0 == "_this"
     }
+
+    pub fn partial_ref(&self) -> Option<Symbol> {
+        if self.0.starts_with('@') {
+            Some(Symbol(self.0[1..].to_string()))
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -125,6 +133,14 @@ pub enum Pattern {
     Instance(InstanceLiteral),
 }
 
+/// Represents a partial variable called `name` whose constraints
+/// are captured in the partial with name `partial_name`
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
+pub struct PartialRef {
+    pub var_name: Symbol,
+    pub partial_name: Symbol,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub enum Value {
     Number(Numeric),
@@ -137,6 +153,7 @@ pub enum Value {
     List(TermList),
     Variable(Symbol),
     RestVariable(Symbol),
+    PartialRef(PartialRef),
     Expression(Operation),
 }
 
@@ -197,7 +214,8 @@ impl Value {
             Value::Call(_)
             | Value::ExternalInstance(_)
             | Value::Variable(_)
-            | Value::RestVariable(_) => false,
+            | Value::RestVariable(_)
+            | Value::PartialRef(_) => false,
             Value::Number(_) | Value::String(_) | Value::Boolean(_) => true,
             Value::Pattern(_) => panic!("unexpected value type"),
             Value::Dictionary(Dictionary { fields }) => fields.values().all(|t| t.is_ground()),

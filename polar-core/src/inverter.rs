@@ -11,9 +11,7 @@ use crate::formatting::ToPolarString;
 use crate::kb::Bindings;
 use crate::runnable::Runnable;
 use crate::terms::{Operation, Operator, Symbol, Term, Value};
-use crate::vm::{
-    cycle_constraints, Binding, BindingStack, Goals, PolarVirtualMachine, VariableState,
-};
+use crate::vm::{Binding, BindingStack, Goals, PolarVirtualMachine, VariableState};
 
 #[derive(Clone)]
 pub struct Inverter {
@@ -57,7 +55,7 @@ impl PartialInverter {
     fn invert_operation(&self, o: &Operation) -> Operation {
         // Compute csp from old_value vs. p.
         let csp = match &self.old_state {
-            VariableState::Partial(e, _) => e.constraints().len(),
+            VariableState::Partial(e) => e.constraints().len(),
             _ => 0,
         };
         o.clone_with_constraints(o.inverted_constraints(csp))
@@ -94,24 +92,13 @@ fn invert_partials(bindings: BindingStack, vm: &PolarVirtualMachine, bsp: usize)
             // Ultimately this should add constraints, but for now this query always succeeds with
             // no constraints because a negation is performed over a variable that is not
             // bound.
-            VariableState::Unbound => (),
+            VariableState::Unbound | VariableState::Cycle(_) => {
+                let constraints =
+                    PartialInverter::new(var.clone(), VariableState::Unbound).fold_term(value);
+                new_bindings.push(Binding(var.clone(), constraints))
+            }
             // during the negation to a different value (the negated query would backtrack).
             VariableState::Bound(x) => assert_eq!(x, value, "inconsistent bindings"),
-            VariableState::Cycle(c) => {
-                let constraints =
-                    PartialInverter::new(var.clone(), VariableState::Cycle(c.clone()))
-                        .fold_term(value);
-                match constraints.value() {
-                    Value::Expression(e) => {
-                        let mut f = cycle_constraints(c);
-                        f.merge_constraints(e.clone());
-                        for var in f.variables() {
-                            new_bindings.push(Binding(var.clone(), f.clone().into_term()));
-                        }
-                    }
-                    _ => unreachable!("Constraint from partial inverter must be expression."),
-                }
-            }
             // Three states of a partial x
             //
             // x > 1 and not (x < 0)
@@ -120,20 +107,11 @@ fn invert_partials(bindings: BindingStack, vm: &PolarVirtualMachine, bsp: usize)
             // - post-inversion but pre-simplification partial (>2 constraints)
             // - post-inversion post-simplification partial (>2 constraints)
             //
-            VariableState::Partial(e, v) => {
+            VariableState::Partial(e) => {
                 let constraints =
-                    PartialInverter::new(v.clone(), VariableState::Partial(e.clone(), v))
+                    PartialInverter::new(var.clone(), VariableState::Partial(e.clone()))
                         .fold_term(value);
-                match constraints.value() {
-                    Value::Expression(f) => {
-                        let mut e = e.clone();
-                        e.merge_constraints(f.clone());
-                        for var in e.variables() {
-                            new_bindings.push(Binding(var.clone(), e.clone().into_term()));
-                        }
-                    }
-                    _ => unreachable!("Constraint from partial inverter must be expression."),
-                }
+                new_bindings.push(Binding(var.clone(), constraints))
             }
         }
     }

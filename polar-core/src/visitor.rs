@@ -31,6 +31,7 @@ pub trait Visitor: Sized {
     fn visit_symbol(&mut self, _s: &Symbol) {}
     fn visit_variable(&mut self, _v: &Symbol) {}
     fn visit_rest_variable(&mut self, _r: &Symbol) {}
+    fn visit_partial_ref(&mut self, _r: &PartialRef) {}
     fn visit_operator(&mut self, _o: &Operator) {}
 
     // Compounds. If you override these, you must walk the children manually.
@@ -104,6 +105,7 @@ pub fn walk_term<V: Visitor>(visitor: &mut V, term: &Term) {
         Value::List(l) => visitor.visit_list(l),
         Value::Variable(v) => visitor.visit_variable(v),
         Value::RestVariable(r) => visitor.visit_rest_variable(r),
+        Value::PartialRef(r) => visitor.visit_partial_ref(r),
         Value::Expression(o) => visitor.visit_operation(o),
     }
 }

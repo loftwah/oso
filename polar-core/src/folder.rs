@@ -48,6 +48,9 @@ pub trait Folder: Sized {
     fn fold_rest_variable(&mut self, v: Symbol) -> Symbol {
         fold_variable(v, self)
     }
+    fn fold_partial_ref(&mut self, v: PartialRef) -> PartialRef {
+        v
+    }
     fn fold_operator(&mut self, o: Operator) -> Operator {
         fold_operator(o, self)
     }
@@ -110,6 +113,7 @@ pub fn fold_value<T: Folder>(v: Value, fld: &mut T) -> Value {
         Value::List(l) => Value::List(fld.fold_list(l)),
         Value::Variable(v) => Value::Variable(fld.fold_variable(v)),
         Value::RestVariable(r) => Value::RestVariable(fld.fold_rest_variable(r)),
+        Value::PartialRef(r) => Value::PartialRef(fld.fold_partial_ref(r)),
         Value::Expression(o) => Value::Expression(fld.fold_operation(o)),
     }
 }
