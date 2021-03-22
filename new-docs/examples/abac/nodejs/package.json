@@ -6,6 +6,6 @@
   "private": true,
   "dependencies": {
     "jest": "^26.4.2",
-    "oso": "../../../../languages/js"
+    "oso": "../../../../languages/js/oso"
   }
 }

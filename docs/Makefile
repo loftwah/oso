@@ -11,7 +11,7 @@ BUILDDIR      = _build
 export BUNDLE_GEMFILE := $(abspath ../languages/ruby/Gemfile)
 export RUBY_DIR := $(abspath ../languages/ruby)
 export JAVA_DIR := $(abspath ../languages/java/oso)
-export JS_DIR := $(abspath ../languages/js)
+export JS_DIR := $(abspath ../languages/js/oso)
 
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
@@ -20,7 +20,7 @@ JAVA_PACKAGE_JAR_PATH := $(JAVA_DIR)/target/oso-0.11.2.jar
 
 RUBY_FILES := $(call rwildcard,../languages/ruby/lib,*.rb)
 JAVA_FILES := $(call rwildcard ../languages/java/oso/src, *.java)
-JS_FILES := $(call rwildcard ../languages/js/src, *.ts)
+JS_FILES := $(call rwildcard ../languages/js/oso/src, *.ts)
 
 # Put it first so that "make" without argument is like "make help".
 help:
@@ -96,7 +96,7 @@ ruby-test:
 	cd examples/user_types/ruby && bundle exec rspec test_spec.rb
 
 nodejs-test:
-	$(MAKE) -C ../languages/js build
+	$(MAKE) -C ../languages/js/oso build
 	cd examples/rbac/nodejs && yarn && yarn jest
 	cd examples/abac/nodejs && yarn && yarn jest
 	cd examples/context/nodejs && yarn && yarn jest

@@ -2,14 +2,14 @@ run: api_docs
 	hugo server
 
 export JAVA_DIR := $(abspath ../languages/java/oso)
-export JS_DIR := $(abspath ../languages/js)
+export JS_DIR := $(abspath ../languages/js/oso)
 export PYTHON_DIR := $(abspath ../languages/python)
 export RUBY_DIR := $(abspath ../languages/ruby)
 
 rwildcard=$(foreach d,$(wildcard $(1:=/*)),$(call rwildcard,$d,$2) $(filter $(subst *,%,$2),$d))
 
 JAVA_FILES := $(call rwildcard ../languages/java/oso/src,*.java)
-JS_FILES := $(call rwildcard ../languages/js/src,*.ts)
+JS_FILES := $(call rwildcard ../languages/js/oso/src,*.ts)
 PYTHON_FILES := $(call rwildcard,../languages/python,*.py)
 PYTHON_RST_FILES := $(call rwildcard,../languages/python,*.rst)
 RUBY_FILES := $(call rwildcard,../languages/ruby/lib,*.rb)
@@ -42,7 +42,7 @@ examples:
 install: examples global-deps tailwind-deps webpack-deps
 	# uncomment when we want to include Oso WASM
 	# $(MAKE) -C .. wasm-build
-	# $(MAKE) -C ../languages/js build
+	# $(MAKE) -C ../languages/js/oso build
 
 global-deps: .make.global-deps.installed
 

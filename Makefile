@@ -77,7 +77,7 @@ fmt-go:
 	$(MAKE) -C languages/go fmt
 
 fmt-js:
-	$(MAKE) -C languages/js fmt
+	$(MAKE) -C languages/js/oso fmt
 
 fmt-python:
 	$(MAKE) -C languages/python fmt
@@ -92,7 +92,7 @@ lint-ruby:
 	$(MAKE) -C languages/ruby lint typecheck
 
 lint-js:
-	$(MAKE) -C languages/js lint
+	$(MAKE) -C languages/js/oso lint
 
 lint-go:
 	$(MAKE) -C languages/go lint
@@ -113,5 +113,5 @@ wasm-test:
 	$(MAKE) -C polar-wasm-api test
 
 js-test:
-	$(MAKE) -C languages/js parity
-	$(MAKE) -C languages/js test
+	$(MAKE) -C languages/js/oso parity
+	$(MAKE) -C languages/js/oso test

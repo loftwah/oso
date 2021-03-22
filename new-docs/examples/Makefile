@@ -3,7 +3,7 @@ OSO_ROOT ?= $(abspath ../../)
 
 # Language directories
 JAVA_DIR := $(OSO_ROOT)/languages/java
-JS_DIR := $(OSO_ROOT)/languages/js
+JS_DIR := $(OSO_ROOT)/languages/js/oso
 RUBY_DIR := $(OSO_ROOT)/languages/ruby
 
 # Needed for tests
