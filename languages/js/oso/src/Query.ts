@@ -18,6 +18,7 @@ import type {
   ExternalUnify,
   MakeExternal,
   NextExternal,
+  obj,
   PolarTerm,
   QueryEvent,
   QueryResult,
@@ -42,12 +43,26 @@ export class Query {
   #host: Host;
   results: QueryResult;
 
-  constructor(ffiQuery: FfiQuery, host: Host) {
+  constructor(ffiQuery: FfiQuery, host: Host, bindings: obj = {}) {
     ffiQuery.setLoggingOptions(...getLogLevelsFromEnv());
     this.#ffiQuery = ffiQuery;
     this.#calls = new Map();
     this.#host = host;
     this.results = this.start();
+
+    for (const name in bindings) {
+      this.bind(name, bindings[name]);
+    }
+  }
+
+  /**
+   * Bind `name` to `value` for the duration of the query.
+   *
+   * @internal
+   */
+  private bind(name: string, value: any) {
+    const stringified = JSON.stringify(this.#host.toPolar(value));
+    this.#ffiQuery.bind(name, stringified);
   }
 
   /**

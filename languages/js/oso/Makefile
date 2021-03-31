@@ -50,5 +50,5 @@ wasm: src/polar_wasm_api.js src/polar_wasm_api.d.ts src/polar_wasm_api_bg.wasm s
 
 # Rebuild the WASM core.
 src/polar_wasm_api.js src/polar_wasm_api.d.ts src/polar_wasm_api_bg.wasm src/polar_wasm_api_bg.wasm.d.ts:
-	$(MAKE) -C ../../polar-wasm-api nodejs
-	$(MAKE) -C ../../polar-wasm-api bundler
+	$(MAKE) -C ../../../polar-wasm-api nodejs
+	$(MAKE) -C ../../../polar-wasm-api bundler

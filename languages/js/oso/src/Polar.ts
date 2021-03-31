@@ -13,7 +13,7 @@ import { Host } from './Host';
 import { Polar as FfiPolar } from './polar_wasm_api';
 import { Predicate } from './Predicate';
 import { processMessage } from './messages';
-import type { Class, Options, QueryResult } from './types';
+import type { Class, obj, Options, QueryResult } from './types';
 import { isConstructor, printError, PROMPT, readFile, repr } from './helpers';
 
 /** Create and manage an instance of the Polar runtime. */
@@ -120,7 +120,7 @@ export class Polar {
   /**
    * Query for a Polar predicate or string.
    */
-  query(q: Predicate | string): QueryResult {
+  query(q: Predicate | string, bindings: obj = {}): QueryResult {
     const host = Host.clone(this.#host);
     let ffiQuery;
     if (typeof q === 'string') {
@@ -130,14 +130,23 @@ export class Polar {
       ffiQuery = this.#ffiPolar.newQueryFromTerm(term);
     }
     this.processMessages();
-    return new Query(ffiQuery, host).results;
+    return new Query(ffiQuery, host, bindings).results;
   }
 
   /**
    * Query for a Polar rule.
    */
-  queryRule(name: string, ...args: unknown[]): QueryResult {
-    return this.query(new Predicate(name, args));
+  queryRule(
+    name: string,
+    {
+      args,
+      bindings,
+    }: {
+      args?: unknown[];
+      bindings?: obj;
+    } = {}
+  ): QueryResult {
+    return this.query(new Predicate(name, args || []), bindings);
   }
 
   /**

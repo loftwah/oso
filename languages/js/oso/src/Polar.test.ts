@@ -1,4 +1,5 @@
 import { Polar } from './Polar';
+import { Expression } from './Expression';
 import { Variable } from './Variable';
 import {
   map,
@@ -650,15 +651,6 @@ describe('errors', () => {
     });
   });
 
-  describe('with expressions', () => {
-    test('errors if an expression is received', async () => {
-      const p = new Polar();
-      expect(p.loadStr('f(x) if x > 2;')).resolves;
-      let result = p.query('f(x)').next();
-      await expect(result).rejects.toThrow(UnexpectedPolarTypeError);
-    });
-  });
-
   describe('when parsing', () => {
     test('raises on IntegerOverflow errors', async () => {
       const p = new Polar();
@@ -809,4 +801,15 @@ describe('iterators', () => {
       await qvar(p, 'x = new BarIterator([1, 2, 3]).sum()', 'x', true)
     ).toBe(6);
   });
+});
+
+test('handles expressions', async () => {
+  const p = new Polar();
+  await p.loadStr('f(x) if x > 2;');
+  const result = (await query(p, 'f(x)'))[0];
+  const x = result.get('x');
+  expect(x).toBeInstanceOf(Expression);
+  const gt = new Expression('Gt', [new Variable('_this'), 2]);
+  const expected = new Expression('And', [gt]);
+  expect(x).toStrictEqual(expected);
 });

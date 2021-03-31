@@ -75,7 +75,9 @@ oso.registerClass(E);
     [
       (
         await oso
-          .queryRule('specializers', new D('hello'), new B.C('hello'))
+          .queryRule('specializers', {
+            args: [new D('hello'), new B.C('hello')],
+          })
           .next()
       ).done,
       (await oso.queryRule('floatLists').next()).done,
@@ -83,14 +85,17 @@ oso.registerClass(E);
       (await oso.queryRule('comparisons').next()).done,
       (await oso.queryRule('testForall').next()).done,
       (await oso.queryRule('testRest').next()).done,
-      (await oso.queryRule('testMatches', new A('hello')).next()).done,
+      (await oso.queryRule('testMatches', { args: [new A('hello')] }).next())
+        .done,
       (
         await oso
-          .queryRule('testMethodCalls', new A('hello'), new B.C('hello'))
+          .queryRule('testMethodCalls', {
+            args: [new A('hello'), new B.C('hello')],
+          })
           .next()
       ).done,
       (await oso.queryRule('testOr').next()).done,
-      (await oso.queryRule('testUnifyClass', A).next()).done,
+      (await oso.queryRule('testUnifyClass', { args: [A] }).next()).done,
     ].some(v => v)
   )
     throw new Error();
@@ -172,12 +177,9 @@ oso.registerClass(E);
   );
 
   // Test unspecialized rule ordering
-  const result = oso.queryRule(
-    'testUnspecializedRuleOrder',
-    'foo',
-    'bar',
-    new Variable('z')
-  );
+  const result = oso.queryRule('testUnspecializedRuleOrder', {
+    args: ['foo', 'bar', new Variable('z')],
+  });
   if (((await result.next()).value as Map<string, any>).get('z') !== 1)
     throw new Error();
   if (((await result.next()).value as Map<string, any>).get('z') !== 2)

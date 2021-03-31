@@ -81,3 +81,18 @@ fn debug_command_succeeds() {
     let msg: JsString = msg.dyn_into().unwrap();
     assert!(msg.includes("Debugger Commands", 0));
 }
+
+#[wasm_bindgen_test]
+fn bind_succeeds() {
+    let polar = polar_wasm_api::Polar::wasm_new();
+    polar.wasm_load("x() if y;", None).unwrap();
+    let mut query = polar.wasm_new_query_from_str("x()").unwrap();
+    let polar_true = r#"{"value":{"Boolean":true}}"#;
+    query.wasm_bind("_y_1", polar_true).unwrap();
+    let event: Object = query.wasm_next_event().unwrap().dyn_into().unwrap();
+    let event_kind: JsValue = "Result".into();
+    let event_data = Reflect::get(&event, &event_kind).unwrap();
+    let data_key: JsValue = "bindings".into();
+    let bindings = Reflect::get(&event_data, &data_key).unwrap();
+    assert_eq!(bindings.dyn_into::<Map>().unwrap().size(), 0);
+}

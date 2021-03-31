@@ -1,4 +1,7 @@
-use polar_core::{polar, terms::Term};
+use polar_core::{
+    polar,
+    terms::{Symbol, Term},
+};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::{serde_serialization_error, serialization_error, Error};
@@ -86,5 +89,17 @@ impl Query {
         polar_log: Option<String>,
     ) {
         self.0.set_logging_options(rust_log, polar_log);
+    }
+
+    #[wasm_bindgen(js_class = Query, js_name = bind)]
+    pub fn wasm_bind(&mut self, name: &str, value: &str) -> JsResult<()> {
+        match serde_json::from_str(value) {
+            Ok(term) => self
+                .0
+                .bind(Symbol::new(name), term)
+                .map_err(Error::from)
+                .map_err(Error::into),
+            Err(e) => Err(serde_serialization_error(e)),
+        }
     }
 }
