@@ -56,7 +56,7 @@ To start adding authorization to the app, let's set up Oso.
 
 ## Adding Oso
 
-First, install the Oso library:
+First, kill the running Flask server, and install the Oso library:
 
 ```console
 $ pip3 install --upgrade oso
@@ -67,19 +67,9 @@ Once the library's installed, create a new file in the `app` directory called
 `authorization.py`. In this file, we'll write a helper function for
 initializing Oso:
 
-```python
-from oso import Oso              # (1)
-
-def init_oso(app):
-    from .user import User
-    from .expense import Expense
-
-    oso = Oso()                  # (2)
-
-    oso.register_class(User)     # (3)
-    oso.register_class(Expense)  # (3)
-    app.oso = oso                # (4)
-```
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.py"
+    to="oso.load_file(\"app/authorization.polar\")" >}}
 
 We've **(1)** imported the `Oso` class, **(2)** constructed a new Oso instance,
 **(3)** registered a pair of our application classes with Oso so that we can
@@ -89,14 +79,9 @@ throughout our app.
 
 We'll call our new helper function during application setup:
 
-```python
-from . import db, expense, organization, user, authorization
-
-def create_app(test_config=None):
-    ...
-
-    authorization.init_oso(app)
-```
+{{< literalInclude
+    path="examples/python/getting-started/application/app/__init__.py"
+    lines="6-9,21-23" >}}
 
 With Oso set up, let's start enforcing authorization to protect our application
 data.
@@ -104,9 +89,9 @@ data.
 ## Enforcing authorization
 
 There are several potential places to enforce authorization in a web app, from
-higher-level route or controller checks to lower-level model, ORM, or database
-checks. Choosing where to enforce is a complicated topic that we covered in
-great detail in [the second chapter of Authorization Academy][authz-academy].
+higher-level route checks to lower-level controller or database checks.
+Choosing where to enforce is a complicated topic that we covered in great
+detail in [the second chapter of Authorization Academy][authz-academy].
 
 [authz-academy]: https://www.osohq.com/academy/chapter-2-architecture
 
@@ -121,20 +106,9 @@ at the controller layer.
 
 Back in `app/authorization.py`, let's create another helper function:
 
-```python
-from oso import Oso
-from flask import current_app, g
-from werkzeug.exceptions import Forbidden
-
-...
-
-def authorize(action, resource):
-    """Can the current user perform `action` on `resource`?"""
-    if current_app.oso.is_allowed(g.current_user, action, resource):
-        return resource
-    else:
-        raise Forbidden("Not Authorized!")
-```
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.py"
+    from="# start-authorize" >}}
 
 We're only securing a single controller method in this guide, but it's still a
 good idea to encapsulate this authorization logic for future reuse and to keep
@@ -143,24 +117,13 @@ it separate from the app's business logic.
 Let's use the new helper function to apply authorization in our `get_expense()`
 controller method:
 
-<!-- TODO(gj): this diff is backwards -->
-<!-- TODO(gj): maybe don't use a diff? literalInclude w/ highlight? -->
-<!-- TODO(gj): remember you changed 'read' -> 'view' -->
+{{< literalInclude
+    path="examples/python/getting-started/application/app/expense.py"
+    lines="8,55-58"
+    hlOpts="hl_lines=8" >}}
 
-```diff
-diff --git a/app/expense.py b/app/expense.py
-index 4481086..a34bd0f 100644
---- a/app/expense.py
-+++ b/app/expense.py
-@@ -6 +5,0 @@ from werkzeug.exceptions import BadRequest, NotFound
--from .authorization import authorize
-@@ -58 +57 @@ def get_expense(id):
--    return str(authorize("view", expense)) + "\n"
-+    return str(expense) + "\n"
-```
-
-Once the Flask app reloads, repeating the same request from earlier should now
-result in a `403 Forbidden`:
+Restart the Flask app, and then repeat the same request from earlier. It should
+now result in a `403 Forbidden`:
 
 ```console
 $ curl -H "user: alice@foo.com" localhost:5000/expenses/2
@@ -187,15 +150,10 @@ In the `app` directory, create a new file named `authorization.polar`. We're
 going to load that file into Oso in the `init_oso()` function we created
 earlier:
 
-```python
-def init_oso(app):
-    ...
-
-    oso.register_class(User)
-    oso.register_class(Expense)
-    oso.load_file("app/authorization.polar") # highlight
-    app.oso = oso
-```
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.py"
+    lines="1,9-13"
+    hlOpts="hl_lines=9" >}}
 
 At this point, all requests to `get_expense()` will still be denied because our
 policy is empty.
@@ -214,14 +172,13 @@ allowed to view an expense if they submitted it**.
 Our `Expense` class has a `user_id` field that stores the ID of the submitting
 `User`. We can encode the desired logic in Polar as follows:
 
-```polar
-allow(user: User, "view", expense: Expense) if
-    user.id = expense.user_id;
-```
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.polar"
+    lines="1-2" >}}
 
-Add that rule to `app/authorization.polar`, restart the server, and making the
-same request should once again succeed since `alice@foo.com` submitted the
-`Expense` with `id=2`:
+Add that rule to `app/authorization.polar`, restart the server, and the same
+request should once again succeed since `alice@foo.com` submitted the `Expense`
+with `id=2`:
 
 ```console
 $ curl -H "user: alice@foo.com" localhost:5000/expenses/2
@@ -257,12 +214,17 @@ A user is allowed to view any expense if they are an accountant.
 Here, we'll add the concept of a *role*, like `accountant`.
 In this case, a user has the role of `accountant` if their job title is "Accountant".
 
-{{< literalInclude path="examples/python/getting-started/application/expenses-flask/app/authorization.polar" lines="4-5" >}}
+
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.polar"
+    lines="4-5" >}}
 
 Here's one place Polar comes in handy: we can add extra information about roles ad hoc.
-Senior accountants are also `accountants`.
+Senior accountants are also accountants.
 
-{{< literalInclude path="examples/python/getting-started/application/expenses-flask/app/authorization.polar" lines="7-8" >}}
+{{< literalInclude
+    path="examples/python/getting-started/application/app/authorization.polar"
+    lines="7-8" >}}
 
 This looks like a re-definition of `user_in_role`, but to Polar, this is adding more information.
 In English, you can read these Polar statements as:
@@ -274,7 +236,7 @@ We could even use this to add information about other roles, like `admin`s or `m
 
 Now, we can add an `allow` statement to check if a user has the correct role:
 
-{{< literalInclude path="examples/python/getting-started/application/expenses-flask/app/authorization.polar" lines="10-11">}}
+{{< literalInclude path="examples/python/getting-started/application/app/authorization.polar" lines="10-11">}}
 
 The user with the email `bhavik@foo.com` is a Senior Accountant, so they can now access Alice's expense!
 
@@ -287,7 +249,8 @@ Expense(amount=17743, description='Pug irony.', user_id=1, id=2)
 
 <!-- TODO(gj): page doesn't exist yet in new docs
 - To explore integrating Oso in your app in more depth continue to [Access Patterns](). -->
-- To learn about different patterns for structuring authorization code, see [Role-Based Authentication](learn/roles).
+- To learn about different patterns for structuring authorization code, see
+  [Role-Based Access Control (RBAC) Patterns](learn/roles).
 - For a deeper introduction to policy syntax, see [Writing Policies](policies).
 - For reference on using the Python Oso library, see [Python Authorization Library](reference).
 
