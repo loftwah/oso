@@ -79,7 +79,9 @@ class Issue(Base):
 
 
 RepositoryRoleMixin = oso_roles.resource_role_class(
-    Base, User, Repository, ["READ", "TRIAGE", "WRITE", "MAINTAIN", "ADMIN"],
+    User,
+    Repository,
+    ["READ", "TRIAGE", "WRITE", "MAINTAIN", "ADMIN"],
 )
 
 
@@ -90,7 +92,7 @@ class RepositoryRole(Base, RepositoryRoleMixin):
 
 # For the tests, make OrganizationRoles NOT mutually exclusive
 OrganizationRoleMixin = oso_roles.resource_role_class(
-    Base, User, Organization, ["OWNER", "MEMBER", "BILLING"], mutually_exclusive=False
+    User, Organization, ["OWNER", "MEMBER", "BILLING"], mutually_exclusive=False
 )
 
 
@@ -99,9 +101,7 @@ class OrganizationRole(Base, OrganizationRoleMixin):
         return {"id": self.id, "name": str(self.name)}
 
 
-TeamRoleMixin = oso_roles.resource_role_class(
-    Base, User, Team, ["MAINTAINER", "MEMBER"]
-)
+TeamRoleMixin = oso_roles.resource_role_class(User, Team, ["MAINTAINER", "MEMBER"])
 
 
 class TeamRole(Base, TeamRoleMixin):
@@ -298,7 +298,7 @@ def test_get_resource_users_by_role(test_db_session, abbey_road, vocalists):
     # Test RepoRoles
     users = (
         test_db_session.query(User)
-        .join(RepositoryRole)
+        .join(RepositoryRole, RepositoryRole.user_id == User.user_id)
         .filter_by(repository=abbey_road, name="READ")
         .all()
     )
@@ -309,7 +309,7 @@ def test_get_resource_users_by_role(test_db_session, abbey_road, vocalists):
     # Test TeamRoles
     users = (
         test_db_session.query(User)
-        .join(TeamRole)
+        .join(TeamRole, TeamRole.user_id == User.user_id)
         .filter_by(team=vocalists, name="MEMBER")
         .all()
     )
@@ -464,7 +464,9 @@ def test_set_get_session(oso_with_session):
 def test_duplicate_resource_role():
     with pytest.raises(ValueError):
         oso_roles.resource_role_class(
-            Base, User, Repository, ["READ", "TRIAGE", "WRITE", "MAINTAIN", "ADMIN"],
+            User,
+            Repository,
+            ["READ", "TRIAGE", "WRITE", "MAINTAIN", "ADMIN"],
         )
 
 

@@ -37,3 +37,12 @@ automatically generated from the Oso Python library source files.
 
 Oso also provides [libraries](frameworks) to integrate with popular Python
 frameworks and ORMS.
+
+{{% callout "Adding roles to your application with SQLAlchemy?" "blue" %}}
+
+We just released early access to the next version of our roles
+library.
+
+[Check it out here!](/guides/new-roles)
+
+{{% /callout %}}

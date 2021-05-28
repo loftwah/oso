@@ -26,9 +26,7 @@ class OsoRoles:
         for res in oso.query("role(resource_class, definitions, _)"):
             resource_class = res["bindings"]["resource_class"]
             roles = list(res["bindings"]["definitions"].keys())
-            role_mixin = resource_role_class(
-                sqlalchemy_base, user_model, resource_class, roles
-            )
+            role_mixin = resource_role_class(user_model, resource_class, roles)
 
             role_class = type(
                 f"{resource_class.__name__}Role", (sqlalchemy_base, role_mixin), {}
@@ -49,15 +47,12 @@ class OsoRoles:
 
 
 def resource_role_class(
-    declarative_base, user_model, resource_model, role_choices, mutually_exclusive=True
+    user_model, resource_model, role_choices, mutually_exclusive=True
 ):
     """Create a resource-specific role Mixin
     for SQLAlchemy models. The role mixin is an
     `Association Object <https://docs.sqlalchemy.org/en/13/orm/basic_relationships.html#association-object>`_
     between the ``user_model`` and the ``resource_model``.
-
-    :param declarative_base: The SQLAlchemy declarative base model that \
-    the role model and all related models are mapped to.
 
     :param user_model: The SQLAlchemy model representing users that the \
     resource-specific roles can be assigned to. The generated Role mixin will \
@@ -86,7 +81,7 @@ def resource_role_class(
         .. code-block:: python
 
             OrganizationRoleMixin = oso_roles.resource_role_class(
-                Base, User, Organization, ["OWNER", "MEMBER", "BILLING"]
+                User, Organization, ["OWNER", "MEMBER", "BILLING"]
             )
 
             class OrganizationRole(Base, OrganizationRoleMixin):
@@ -449,9 +444,10 @@ def get_resource_users_by_role(session, resource, role_name):
     resource_name = _get_resource_name_lower(resource_model)
     filter_kwargs = {resource_name: resource, "name": role_name}
 
+    user_model_pk = getattr(user_model, inspect(user_model).primary_key[0].name)
     users = (
         session.query(user_model)
-        .join(role_model)
+        .join(role_model, role_model.user_id == user_model_pk)
         .filter_by(**filter_kwargs)
         .order_by(user_model.user_id)
         .all()
