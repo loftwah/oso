@@ -16,7 +16,7 @@ class User:
             self.role_map[resource.name] = [role_name]
 
     def roles(self, resource):
-        yield self.role_map.get(resource.name)
+        yield {"name": self.role_map.get(resource.name), "resource": resource}
 
 
 @dataclass
@@ -39,8 +39,13 @@ oso.register_class(Org)
 leina = User("leina")
 gabe = User("gabe")
 oso_hq = Org("Oso")
+apple = Org("Apple")
 oso_repo = Repo(name="oso_repo", org=oso_hq)
+ios_repo = Repo(name="ios", org=apple)
 leina.assign_role(oso_hq, "org:owner")
 gabe.assign_role(oso_repo, "repo:writer")
 
 assert oso.is_allowed(leina, "create_repos", oso_hq)
+assert oso.is_allowed(leina, "read", oso_repo)
+assert not oso.is_allowed(leina, "read", ios_repo)
+assert oso.is_allowed(gabe, "read", oso_repo)
