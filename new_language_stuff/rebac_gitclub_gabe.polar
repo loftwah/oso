@@ -12,19 +12,37 @@ relationship(role, "internal_IMPLIES", implied_role) if
 # User's policy
 
 relationship(action, "IS_VALID_ACTION_FOR", _: Org) if
-  action in ["create_repos", "list_repos"];
+  action in ["create_repo", "invite"];
 relationship(action, "IS_VALID_ACTION_FOR", _: Repo) if
-  action in ["read"];
+  action in ["pull", "push"];
 relationship(action, "IS_VALID_ACTION_FOR", _: Issue) if
-  action in ["edit"];
+  action in ["delete", "edit"];
 
-relationship(role, "ROLE_HAS_PERMISSION", "create_repos", org: Org) if
+# org:owner can invite to the org
+relationship(role, "ROLE_HAS_PERMISSION", action, org: Org) if
+  action in ["invite"] and
   role = {name: "owner", resource: org};
-relationship(role, "ROLE_HAS_PERMISSION", "list_repos", org: Org) if
+# org:member can create repos in the org
+relationship(role, "ROLE_HAS_PERMISSION", action, org: Org) if
+  action in ["create_repo"] and
   role = {name: "member", resource: org};
-relationship(role, "ROLE_HAS_PERMISSION", "read", repo: Repo) if
+# repo:reader can pull repos
+relationship(role, "ROLE_HAS_PERMISSION", action, repo: Repo) if
+  action in ["pull"] and
   role = {name: "reader", resource: repo};
-relationship(role, "ROLE_HAS_PERMISSION", "edit", issue: Issue) if
+# repo:writer can push repos
+relationship(role, "ROLE_HAS_PERMISSION", action, repo: Repo) if
+  action in ["push"] and
+  role = {name: "writer", resource: repo};
+# org:owner can delete issues
+relationship(role, "ROLE_HAS_PERMISSION", action, issue: Issue) if
+  action in ["delete"] and
+  relationship(repo, "IS_PARENT", issue) and
+  relationship(org, "IS_PARENT", repo) and
+  role = {name: "owner", resource: org};
+# repo:writer can edit issues
+relationship(role, "ROLE_HAS_PERMISSION", action, issue: Issue) if
+  action in ["edit"] and
   relationship(repo, "IS_PARENT", issue) and
   role = {name: "writer", resource: repo};
 
