@@ -1,6 +1,6 @@
 allow(actor, action, resource) if
   relationship(action, "IS_VALID_ACTION_FOR", resource) and
-  relationship(permitted_role, "ROLE_HAS_PERMISSION", action, resource) and
+  relationship(permitted_role, "internal_ROLE_HAS_PERMISSION", action, resource) and
   relationship(role, "internal_IMPLIES", permitted_role) and
   relationship(actor, "CAN_ASSUME_ROLE", role);
 
@@ -8,6 +8,19 @@ relationship(role, "internal_IMPLIES", role);
 relationship(role, "internal_IMPLIES", implied_role) if
   relationship(intermediate, "IMPLIES", implied_role) and
   relationship(role, "internal_IMPLIES", intermediate);
+
+relationship({name: name, resource: resource}, "internal_ROLE_HAS_PERMISSION", action, resource) if
+  relationship({name: name, resource: resource}, "ROLE_HAS_PERMISSION", action, resource);
+
+relationship({name: name, resource: ancestor}, "internal_ROLE_HAS_PERMISSION", action, resource) if
+  relationship(ancestor, "IS_ANCESTOR", resource) and
+  relationship({name: name, resource: ancestor}, "ROLE_HAS_PERMISSION", action, resource);
+
+relationship(ancestor, "IS_ANCESTOR", resource) if
+  relationship(ancestor, "IS_PARENT", resource);
+relationship(ancestor, "IS_ANCESTOR", resource) if
+  relationship(intermediate, "IS_PARENT", resource) and
+  relationship(ancestor, "IS_ANCESTOR", intermediate);
 
 # User's policy
 
@@ -35,16 +48,13 @@ relationship(role, "ROLE_HAS_PERMISSION", action, repo: Repo) if
   action in ["push"] and
   role = {name: "writer", resource: repo};
 # org:owner can delete issues
-relationship(role, "ROLE_HAS_PERMISSION", action, issue: Issue) if
+relationship(role, "ROLE_HAS_PERMISSION", action, _issue: Issue) if
   action in ["delete"] and
-  relationship(repo, "IS_PARENT", issue) and
-  relationship(org, "IS_PARENT", repo) and
-  role = {name: "owner", resource: org};
+  role = {name: "owner", resource: _org};
 # repo:writer can edit issues
-relationship(role, "ROLE_HAS_PERMISSION", action, issue: Issue) if
+relationship(role, "ROLE_HAS_PERMISSION", action, _issue: Issue) if
   action in ["edit"] and
-  relationship(repo, "IS_PARENT", issue) and
-  role = {name: "writer", resource: repo};
+  role = {name: "writer", resource: _repo};
 
 relationship(actor, "CAN_ASSUME_ROLE", role) if
   actor.has_role_for_resource(role.name, role.resource);

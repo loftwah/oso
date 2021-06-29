@@ -15,7 +15,7 @@ class User:
         self.role_map[resource] = role_name
 
     def has_role_for_resource(self, role_name, resource):
-        print(f"checking if {self.name} has the {role_name} role on {resource}")
+        # print(f"checking if {self.name} has the {role_name} role on {resource}")
         return self.role_map.get(resource) == role_name
 
 
@@ -104,7 +104,7 @@ def test_policy(policy_file):
 
 def main():
     test_policy("rebac_gitclub_gabe.polar")
-    test_policy("rebac_gitclub_leina.polar")
+    # test_policy("rebac_gitclub_leina.polar")
 
 
 if __name__ == "__main__":
