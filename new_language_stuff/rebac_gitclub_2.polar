@@ -91,11 +91,20 @@ ancestor_descendant(ancestor, descendant) if
 
 
 ## ISSUES WITH THIS POLICY
+# - Less structured and therefore harder to read than the resource predicate structure
 # - necessary conditions have to be written by the user, but we know that many always have to be enforced so we would like to build these in
 #    - e.g., parent_child() relationships are necessary for role implications and cross-resource role permission assignment
 # - we have to know what is bound/unbound and structure the policy accordingly, which removes some of the benefits of a declarative language
 #     - e.g., I can't specialize on roles when the role will be passed in as unbound (like in resource_role()), but I can when the role will be bound (like the second argument to role_implication())
 # - The bug Gabe already found about grounding external instances reared its head
+# - doesn't support cross-resource permissions (but Gabe's does)
+
+## GOOD THINGS ABOUT THIS POLICY
+# - The evaluation and structure of predicates matches our mental model for ReBAC
+# - Relationships are explicitly defined
+# - Actors, resources, roles, and permissions are explicitly defined
+# - The directionality of relationships is taking shape, and providing hints for
+#   how to break relationships into an OOP model.
 
 ## NEXT STEPS
 # - document what we did
