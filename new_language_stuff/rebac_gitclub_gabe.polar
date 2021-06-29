@@ -1,69 +1,69 @@
 allow(actor, action, resource) if
-  internal(action, "IS_VALID_ACTION_FOR", resource) and
-  internal(permitted_role, "HAS_PERMISSION", action, resource) and
-  internal(role, "IMPLIES", permitted_role) and
-  relationship(actor, "CAN_ASSUME_ROLE", role);
+  valid_action_for_resource(action, resource) and
+  internal_role_has_permission(permitted_role, action, resource) and
+  internal_role_implication(role, permitted_role) and
+  actor_can_assume_role(actor, role);
 
-internal(role, "IMPLIES", role);
-internal(role, "IMPLIES", implied_role) if
-  relationship(intermediate, "IMPLIES", implied_role) and
-  internal(role, "IMPLIES", intermediate);
+internal_role_implication(role, role);
+internal_role_implication(role, implied_role) if
+  role_implication(intermediate, implied_role) and
+  internal_role_implication(role, intermediate);
 
 # Role has local permission.
-internal({name: name, resource: resource}, "HAS_PERMISSION", action, resource) if
-  relationship(name, "HAS_PERMISSION", action, resource);
+internal_role_has_permission({name: name, resource: resource}, action, resource) if
+  role_grants_permission(name, action, resource);
 
 # Role has cross-resource permission.
-internal({name: name, resource: ancestor}, "HAS_PERMISSION", action, resource) if
-  internal(ancestor, "IS_ANCESTOR", resource) and
-  relationship(ancestor, name, "HAS_PERMISSION", action, resource);
+internal_role_has_permission({name: name, resource: ancestor}, action, resource) if
+  ancestor_resource(ancestor, resource) and
+  role_grants_permission(ancestor, name, action, resource);
 
-internal(ancestor, "IS_ANCESTOR", resource) if
-  relationship(ancestor, "IS_PARENT", resource);
-internal(ancestor, "IS_ANCESTOR", resource) if
-  relationship(intermediate, "IS_PARENT", resource) and
-  internal(ancestor, "IS_ANCESTOR", intermediate);
+ancestor_resource(ancestor, resource) if
+  parent_child(ancestor, resource);
+ancestor_resource(ancestor, resource) if
+  parent_child(intermediate, resource) and
+  ancestor_resource(ancestor, intermediate);
 
-internal(action, "IS_VALID_ACTION_FOR", resource) if
-  relationship(_, "HAS_PERMISSION", action, resource) or
-  relationship(_, _, "HAS_PERMISSION", action, resource);
+valid_action_for_resource(action, resource) if
+  role_grants_permission(_, action, resource) or
+  role_grants_permission(_, _, action, resource);
 
-internal(name, "IS_VALID_ROLE_FOR", resource) if
-  relationship(name, "HAS_PERMISSION", _, resource) or
-  relationship(_, name, "HAS_PERMISSION", _, resource);
+valid_role_for_resource(name, resource) if
+  role_grants_permission(name, _, resource) or
+  role_grants_permission(_, name, _, resource);
 
 # User's policy
 
-relationship("owner", "HAS_PERMISSION", "invite", _: Org);
-relationship("member", "HAS_PERMISSION", "create_repo", _: Org);
-relationship("reader", "HAS_PERMISSION", "pull", _: Repo);
-relationship("writer", "HAS_PERMISSION", "push", _: Repo);
-relationship(_: Org, "owner", "HAS_PERMISSION", "delete", _: Issue);
-relationship(_: Repo, "writer", "HAS_PERMISSION", "edit", _: Issue);
+role_grants_permission("owner", "invite", _: Org);
+role_grants_permission("member", "create_repo", _: Org);
+role_grants_permission("reader", "pull", _: Repo);
+role_grants_permission("writer", "push", _: Repo);
+role_grants_permission(_: Org, "owner", "delete", _: Issue);
+role_grants_permission(_: Repo, "writer", "edit", _: Issue);
 
-relationship(actor, "CAN_ASSUME_ROLE", role) if
+actor_can_assume_role(actor, role) if
   actor.has_role_for_resource(role.name, role.resource);
 
 # org:owner implies org:member
-relationship(role, "IMPLIES", _: {name: "member", resource: org}) if
+role_implication(role, _: {name: "member", resource: org}) if
   org matches Org and # necessary if you have roles w/ the same name on different resource types
   role = {name: "owner", resource: org};
 # org:owner implies repo:writer
-relationship(role, "IMPLIES", _: {name: "writer", resource: repo}) if
+role_implication(role, _: {name: "writer", resource: repo}) if
   repo matches Repo and
-  relationship(org, "IS_PARENT", repo) and
+  parent_child(org, repo) and
   role = {name: "owner", resource: org};
 # org:member implies repo:reader
-relationship(role, "IMPLIES", _: {name: "reader", resource: repo}) if
+role_implication(role, _: {name: "reader", resource: repo}) if
   repo matches Repo and
-  relationship(org, "IS_PARENT", repo) and
+  parent_child(org, repo) and
   role = {name: "member", resource: org};
 # repo:writer implies repo:reader
-relationship(role, "IMPLIES", _: {name: "reader", resource: repo}) if
+role_implication(role, _: {name: "reader", resource: repo}) if
   repo matches Repo and
   role = {name: "writer", resource: repo};
 
-relationship(org, "IS_PARENT", repo: Repo) if
+parent_child(org, repo: Repo) if
   org = repo.org;
-relationship(repo, "IS_PARENT", issue: Issue) if
+parent_child(repo, issue: Issue) if
   repo = issue.repo;
