@@ -25,24 +25,33 @@ resource_role(resource: Org, role) if
 	role_name in ["owner", "member"] and # For now let's say role names are globally unique
 	role = {name: role_name, resource: resource};
 
+resource_role(resource, role) if
+	ancestor_descendant(ancestor, resource) and
+	resource_role(ancestor, role);
+
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_permission(role, "invite", resource) if
-	role = {name: "owner", resource: resource};
+	resource_role(resource, role) and
+	role.name = "owner";
 
 role_permission(role, "create_repo", resource) if
-	role = {name: "member", resource: resource};
+	resource_role(resource, role) and
+	role.name = "member";
 
 # Must check that resource = implied_resource OR ancestor_descendent(resource, implied_resource)
 role_implication(role, _implied_role: {name: "member", resource: resource}) if
-	role = {name: "owner", resource: resource};
+	resource_role(resource, role) and
+	role.name = "owner";
 
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	ancestor_descendant(org, repo) and
-	role = {name: "member", resource: org};
+	# ancestor_descendant(org, repo) and
+	resource_role(repo, role) and
+	role.name = "member";
 
 role_implication(role, _implied_role: {name: "writer", resource: repo}) if
-	ancestor_descendant(org, repo) and
-	role = {name: "owner", resource: org};
+	# ancestor_descendant(org, repo) and
+	resource_role(repo, role) and
+	role.name = "owner";
 
 parent_child(parent, child: Repo) if
 	child.org = parent;
@@ -67,14 +76,17 @@ resource_role(resource: Repo, role) if
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_permission(role, "pull", resource: Repo) if
-	role = {name: "reader", resource: resource};
+	resource_role(resource, role) and
+	role.name = "reader";
 
 role_permission(role, "push", resource: Repo) if
-	role = {name: "writer", resource: resource};
+	resource_role(resource, role) and
+	role.name = "writer";
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	role = {name: "writer", resource: repo};
+	resource_role(repo, role) and
+	role.name = "writer";
 
 
 ##### OSO-DEFINED #####
