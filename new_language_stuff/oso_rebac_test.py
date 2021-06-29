@@ -2,6 +2,8 @@ from enum import Enum
 from oso import Oso
 from dataclasses import dataclass
 
+ROLES_DB = {}
+
 
 class User:
     def __init__(self, name):
@@ -9,16 +11,28 @@ class User:
         self.role_map = {}
 
     def assign_role(self, resource, role_name):
+        # role = ROLES_DB.get((resource.name, self.name))
+        # ROLES_DB[(resource.name, self.name)] = Role(
+        #     name=role_name, user=self, resource=resource
+        # )
+
         roles = self.role_map.get(resource.name)
         if roles is not None:
             roles.append(role_name)
         else:
             self.role_map[resource.name] = [role_name]
 
-    def roles(self, resource):
+    def has_role(self, role, resource):
+        # return role == ROLES_DB.get(role.resource.name, self.name)
         role = self.role_map.get(resource.name)
-        if role is not None:
-            yield role
+        return role is not None
+
+
+@dataclass
+class Role:
+    name: str
+    user: User
+    resource: object
 
 
 @dataclass
@@ -33,10 +47,11 @@ class Repo:
 
 
 oso = Oso()
-oso.load_file("rebac_gitclub_2.polar")
 oso.register_class(User)
 oso.register_class(Repo)
 oso.register_class(Org)
+oso.register_class(Role)
+oso.load_file("rebac_gitclub_2.polar")
 
 leina = User("leina")
 gabe = User("gabe")
