@@ -101,6 +101,8 @@ def test_policy(policy_file):
     # from same-resource implication
     assert oso.is_allowed(gabe, "pull", oso_repo)
 
+    # TODO: child-resource implication that has a cross-resource permission
+
 
 def main():
     test_policy("rebac_gitclub_gabe.polar")
