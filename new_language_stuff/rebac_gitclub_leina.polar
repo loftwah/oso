@@ -27,11 +27,11 @@ resource_role(resource: Org, role) if
 	role = {name: role_name, resource: resource};
 
 
-# Necessary (only if) conditions must be met in order for these rules to hold
+# Necessary (only if) conditions must be met in order for these rules to hold (we are checking these internally)
 role_permission(_role: {name: "owner"}, "invite", _resource: Org);
 role_permission(_role: {name: "member"}, "create_repo", _resource: Org);
 
-# Necessary (only if) conditions must be met in order for these rules to hold
+# Necessary (only if) conditions must be met in order for these rules to hold (we are checking these internally)
 role_implication(_role: {name: "owner"}, _implied_role: {name: "member"});
 role_implication(_role: {name: "member"}, _implied_role: {name: "reader"});
 role_implication(_role: {name: "owner"}, _implied_role: {name: "writer"});
@@ -87,19 +87,23 @@ allow(actor, action, resource) if
 	actor(actor) and
 	permission(action, resource) and
 	INTERNAL_role_permission(implied_role, action, resource) and
-	# debug(implied_role) and
 	INTERNAL_role_implication(role, implied_role) and
-	# debug(role) and
 	actor_role(actor, role);
 
-# TODO: implications--probably port this from polar_roles
-
+# Necessary conditions for `role_permission(role, action, resource)`:
+# 	- valid ONLY IF a path exists from resource->(...resource_n)->role either directly or through parent_child relationships AND that path is the shortest path
+#       - the existence of a valid path is checked by `resource_role`
+#       - the shortest path requirement means that if a role exists that is more closely related to the resource,
+#         all permissions must be assigned to the closer role. This requirement is not checked in the current implementation.
 INTERNAL_role_permission(role, action, resource) if
 	# bind `role` to all the roles that could have permissions on `resource` (roles on `resource` or on its ancestors)
 	resource_role(resource, role) and
 	# check if any of those roles have the permission
 	role_permission(role, action, resource);
 
+# Necessary conditions for `role_implication(role, implied_role)`:
+#    - valid ONLY IF a path exists from implied_role->resource->(...resource_n)->role, either directly or through parent_child relationships
+#	     - the existence of a valid path is checked by `resource_role`
 INTERNAL_role_implication(role, role);
 INTERNAL_role_implication(role, implied_role) if
 	# bind `intermediate` to all the roles that could imply `implied_role` (roles for the same resource or ancestor resources)
