@@ -97,6 +97,12 @@ ancestor_descendant(ancestor, descendant) if
 #     - e.g., I can't specialize on roles when the role will be passed in as unbound (like in resource_role()), but I can when the role will be bound (like the second argument to role_implication())
 # - The bug Gabe already found about grounding external instances reared its head
 
+## NEXT STEPS
+# - document what we did
+# - come up with ideas to improve ^^
+# - add another rebac feature to gain confidence in/stress test model
+# - confirm parity with existing RBAC with tests?
+
 
 ### OLD ###
 
