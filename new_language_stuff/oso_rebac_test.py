@@ -1,4 +1,5 @@
 from enum import Enum
+from typing import Union
 from oso import Oso
 from dataclasses import dataclass
 
@@ -9,34 +10,35 @@ class User:
         self.role_map = {}
 
     def assign_role(self, resource, role_name):
-        roles = self.role_map.get(resource.name)
-        if roles is not None:
-            roles.append(role_name)
-        else:
-            self.role_map[resource.name] = [role_name]
+        self.role_map[resource] = role_name
 
-    def roles(self, resource):
-        role = self.role_map.get(resource.name)
-        if role is not None:
-            yield role
+    def has_role_for_resource(self, role_name, resource):
+        print(f"checking if {self.name} has {role_name} on {resource.name}")
+        return self.role_map.get(resource) == role_name
 
 
-@dataclass
+@dataclass(frozen=True)
 class Org:
     name: str
 
 
-@dataclass
+@dataclass(frozen=True)
 class Repo:
     name: str
     org: Org
 
 
+@dataclass(frozen=True)
+class Role:
+    name: str
+    resource: Union[Org, Repo]
+
+
 oso = Oso()
-oso.load_file("rebac_gitclub_2.polar")
 oso.register_class(User)
 oso.register_class(Repo)
 oso.register_class(Org)
+oso.load_file("rebac_gitclub_gabe.polar")
 
 leina = User("leina")
 gabe = User("gabe")
@@ -44,8 +46,8 @@ oso_hq = Org("Oso")
 apple = Org("Apple")
 oso_repo = Repo(name="oso_repo", org=oso_hq)
 ios_repo = Repo(name="ios", org=apple)
-leina.assign_role(oso_hq, "org:owner")
-gabe.assign_role(oso_repo, "repo:writer")
+leina.assign_role(oso_hq, "owner")
+gabe.assign_role(oso_repo, "writer")
 
 # from direct role assignment
 assert oso.is_allowed(leina, "create_repos", oso_hq)
