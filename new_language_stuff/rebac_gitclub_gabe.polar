@@ -22,14 +22,10 @@ relationship(ancestor, "IS_ANCESTOR", resource) if
   relationship(intermediate, "IS_PARENT", resource) and
   relationship(ancestor, "IS_ANCESTOR", intermediate);
 
-# User's policy
+relationship(action, "IS_VALID_ACTION_FOR", resource) if
+  relationship(_, "ROLE_HAS_PERMISSION", action, resource);
 
-relationship(action, "IS_VALID_ACTION_FOR", _: Org) if
-  action in ["create_repo", "invite"];
-relationship(action, "IS_VALID_ACTION_FOR", _: Repo) if
-  action in ["pull", "push"];
-relationship(action, "IS_VALID_ACTION_FOR", _: Issue) if
-  action in ["delete", "edit"];
+# User's policy
 
 # org:owner can invite to the org
 relationship(role, "ROLE_HAS_PERMISSION", action, org: Org) if
