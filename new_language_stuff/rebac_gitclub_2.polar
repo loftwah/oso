@@ -24,6 +24,7 @@ resource_role(resource: Org, role) if
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 resource_role_permission(resource: Org, "org:owner", "create_repos");
+resource_role_permission(resource: Org, "org:owner", "list_repos");
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 resource_role_implication(resource: Org, "org:owner", implied_resource: Org, "org:member");

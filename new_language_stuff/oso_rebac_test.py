@@ -16,7 +16,9 @@ class User:
             self.role_map[resource.name] = [role_name]
 
     def roles(self, resource):
-        yield {"name": self.role_map.get(resource.name), "resource": resource}
+        role = self.role_map.get(resource.name)
+        if role is not None:
+            yield role
 
 
 @dataclass
@@ -45,7 +47,16 @@ ios_repo = Repo(name="ios", org=apple)
 leina.assign_role(oso_hq, "org:owner")
 gabe.assign_role(oso_repo, "repo:writer")
 
+# from direct role assignment
 assert oso.is_allowed(leina, "create_repos", oso_hq)
+
+# from same-resource implication
+assert oso.is_allowed(leina, "list_repos", oso_hq)
+
+# from child-resource implication
 assert oso.is_allowed(leina, "read", oso_repo)
+
 assert not oso.is_allowed(leina, "read", ios_repo)
+
+# from same-resource implication
 assert oso.is_allowed(gabe, "read", oso_repo)
