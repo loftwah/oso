@@ -37,15 +37,12 @@ role_permission(role: {name: "member"}, "create_repo", resource: Org);
 
 # Must check that resource = implied_resource OR ancestor_descendent(resource, implied_resource)
 role_implication(role, _implied_role: {name: "member", resource: resource}) if
-	resource_role(resource, role) and
 	role.name = "owner";
 
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	resource_role(repo, role) and
 	role.name = "member";
 
 role_implication(role, _implied_role: {name: "writer", resource: repo}) if
-	resource_role(repo, role) and
 	role.name = "owner";
 
 parent_child(parent, child: Repo) if
@@ -75,7 +72,6 @@ role_permission(role: {name: "writer"}, "push", resource: Repo);
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	resource_role(repo, role) and
 	role.name = "writer";
 
 # Issue Resource
@@ -101,24 +97,26 @@ allow(actor, action, resource) if
 	permission(action, resource) and
 	INTERNAL_role_permission(implied_role, action, resource) and
 	# debug(implied_role) and
-	NESTED_role_implication(role, implied_role) and
+	INTERNAL_role_implication(role, implied_role) and
 	# debug(role) and
 	actor_role(actor, role);
 
 # TODO: implications--probably port this from polar_roles
 
 INTERNAL_role_permission(role, action, resource) if
+	# bind `role` to all the roles that could have permissions on `resource` (roles on `resource` or on its ancestors)
 	resource_role(resource, role) and
+	# check if any of those roles have the permission
 	role_permission(role, action, resource);
 
+INTERNAL_role_implication(role, role);
 INTERNAL_role_implication(role, implied_role) if
-	resource_role(implied_role.resource, role) and
-	NESTED_role_implication(role, implied_role);
-
-NESTED_role_implication(role, role);
-NESTED_role_implication(role, implied_role) if
+	# bind `intermediate` to all the roles that could imply `implied_role` (roles for the same resource or ancestor resources)
+	resource_role(implied_role.resource, intermediate) and
+	# find any `intermediate` roles that imply `implied_role`
 	role_implication(intermediate, implied_role) and
-	NESTED_role_implication(role, intermediate);
+	# find all roles that imply `intermediate`
+	INTERNAL_role_implication(role, intermediate);
 
 ancestor_descendant(ancestor, descendant) if
 	parent_child(parent, descendant) and
