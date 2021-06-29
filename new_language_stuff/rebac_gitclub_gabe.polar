@@ -38,8 +38,8 @@ relationship("owner", "HAS_PERMISSION", "invite", _: Org);
 relationship("member", "HAS_PERMISSION", "create_repo", _: Org);
 relationship("reader", "HAS_PERMISSION", "pull", _: Repo);
 relationship("writer", "HAS_PERMISSION", "push", _: Repo);
-relationship(_: Org, "owner", "HAS_PERMISSION", "delete", _issue: Issue);
-relationship(_: Repo, "writer", "HAS_PERMISSION", "edit", _issue: Issue);
+relationship(_: Org, "owner", "HAS_PERMISSION", "delete", _: Issue);
+relationship(_: Repo, "writer", "HAS_PERMISSION", "edit", _: Issue);
 
 relationship(actor, "CAN_ASSUME_ROLE", role) if
   actor.has_role_for_resource(role.name, role.resource);
