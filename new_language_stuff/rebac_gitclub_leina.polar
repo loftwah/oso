@@ -22,10 +22,12 @@ permission(action, _resource: Org) if
 	];
 
 resource_role(resource: Org, role) if
+	# Get the roles for a resource
 	role_name in ["owner", "member"] and # For now let's say role names are globally unique
 	role = {name: role_name, resource: resource};
 
 resource_role(resource, role) if
+	# Get the roles for a resource's ancestors
 	ancestor_descendant(ancestor, resource) and
 	resource_role(ancestor, role);
 
@@ -44,12 +46,10 @@ role_implication(role, _implied_role: {name: "member", resource: resource}) if
 	role.name = "owner";
 
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	# ancestor_descendant(org, repo) and
 	resource_role(repo, role) and
 	role.name = "member";
 
 role_implication(role, _implied_role: {name: "writer", resource: repo}) if
-	# ancestor_descendant(org, repo) and
 	resource_role(repo, role) and
 	role.name = "owner";
 
@@ -97,13 +97,21 @@ allow(actor, action, resource) if
 	permission(action, resource) and
 	role_permission(implied_role, action, resource) and
 	# debug(implied_role) and
-	role_implication(role, implied_role) and
+	NESTED_role_implication(role, implied_role) and
 	# debug(role) and
 	actor_role(actor, role);
 
 # TODO: implications--probably port this from polar_roles
 
-role_implication(role, role);
+INTERNAL_role_implication(role, implied_role) if
+	resource_role(implied_role.resource, role) and
+	NESTED_role_implication(role, implied_role);
+
+NESTED_role_implication(role, role);
+NESTED_role_implication(role, implied_role) if
+	role_implication(intermediate, implied_role) and
+	NESTED_role_implication(role, intermediate);
+
 
 ancestor_descendant(ancestor, descendant) if
 	parent_child(parent, descendant) and
