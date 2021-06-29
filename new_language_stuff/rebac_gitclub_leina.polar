@@ -26,24 +26,15 @@ resource_role(resource: Org, role) if
 	role_name in ["owner", "member"] and # For now let's say role names are globally unique
 	role = {name: role_name, resource: resource};
 
-resource_role(resource, role) if
-	# Get the roles for a resource's ancestors
-	ancestor_descendant(ancestor, resource) and
-	resource_role(ancestor, role);
 
-# Necessary (only if) conditions must be met in order for this rule to hold
-role_permission(role: {name: "owner"}, "invite", resource: Org);
-role_permission(role: {name: "member"}, "create_repo", resource: Org);
+# Necessary (only if) conditions must be met in order for these rules to hold
+role_permission(_role: {name: "owner"}, "invite", _resource: Org);
+role_permission(_role: {name: "member"}, "create_repo", _resource: Org);
 
-# Must check that resource = implied_resource OR ancestor_descendent(resource, implied_resource)
-role_implication(role, _implied_role: {name: "member", resource: resource}) if
-	role.name = "owner";
-
-role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	role.name = "member";
-
-role_implication(role, _implied_role: {name: "writer", resource: repo}) if
-	role.name = "owner";
+# Necessary (only if) conditions must be met in order for these rules to hold
+role_implication(_role: {name: "owner"}, _implied_role: {name: "member"});
+role_implication(_role: {name: "member"}, _implied_role: {name: "reader"});
+role_implication(_role: {name: "owner"}, _implied_role: {name: "writer"});
 
 parent_child(parent, child: Repo) if
 	child.org = parent;
@@ -67,12 +58,11 @@ resource_role(resource: Repo, role) if
 	role = {name: role_name, resource: resource};
 
 # Necessary (only if) conditions must be met in order for this rule to hold
-role_permission(role: {name: "reader"}, "pull", resource: Repo);
-role_permission(role: {name: "writer"}, "push", resource: Repo);
+role_permission(_role: {name: "reader"}, "pull", _resource: Repo);
+role_permission(_role: {name: "writer"}, "push", _resource: Repo);
 
 # Necessary (only if) conditions must be met in order for this rule to hold
-role_implication(role, _implied_role: {name: "reader", resource: repo}) if
-	role.name = "writer";
+role_implication(_role: {name: "writer"}, _implied_role: {name: "reader"});
 
 # Issue Resource
 resource(_: Issue);
@@ -83,8 +73,9 @@ permission(action, _resource: Issue) if
 		"delete"
 	];
 
-role_permission(role: {name: "owner"}, "delete", resource: Issue);
-role_permission(role: {name: "writer"}, "edit", resource: Issue);
+# Necessary (only if) conditions must be met in order for this rule to hold
+role_permission(_role: {name: "owner"}, "delete", _resource: Issue);
+role_permission(_role: {name: "writer"}, "edit", _resource: Issue);
 
 parent_child(parent, child: Issue) if
 	child.repo = parent;
@@ -117,6 +108,11 @@ INTERNAL_role_implication(role, implied_role) if
 	role_implication(intermediate, implied_role) and
 	# find all roles that imply `intermediate`
 	INTERNAL_role_implication(role, intermediate);
+
+resource_role(resource, role) if
+	# Get the roles for a resource's ancestors
+	ancestor_descendant(ancestor, resource) and
+	resource_role(ancestor, role);
 
 ancestor_descendant(ancestor, descendant) if
 	parent_child(parent, descendant) and
