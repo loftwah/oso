@@ -27,7 +27,7 @@ resource_role_permission(resource: Org, "org:owner", "create_repos");
 resource_role_permission(resource: Org, "org:owner", "list_repos");
 
 # Necessary (only if) conditions must be met in order for this rule to hold
-resource_role_implication(resource: Org, "org:owner", implied_resource: Org, "org:member");
+resource_role_implication(resource: Org, "org:owner", resource: Org, "org:member");
 resource_role_implication(resource: Org, "org:member", implied_resource: Repo, "repo:reader");
 
 parent_child(parent: Org, child: Repo) if
@@ -61,9 +61,9 @@ resource_role_implication(resource: Repo, "repo:writer", implied_resource: Repo,
 allow(actor, action, resource) if
 	resource(resource) and
 	actor(actor) and
-	actor_resource_role(actor, resource, role) and
+	resource_role_permission_ONLY_IF(resource, role, action) and
 	resource_role_implication_ONLY_IF(resource, role, implied_resource, implied_role) and
-	resource_role_permission_ONLY_IF(implied_resource, implied_role, action);
+	actor_resource_role(actor, implied_resource, implied_role);
 
 # TODO: implications--probably port this from polar_roles
 
@@ -73,11 +73,15 @@ allow(actor, action, resource) if
 # 	resource_action(resource, action);
 
 # Hacky version of necessary condition (this is the rule that gets called by evaluation logic)
+# TODO: add ancestor checks
 resource_role_permission_ONLY_IF(resource, role, action) if
 	resource_role(resource, role) and
 	resource_action(resource, action) and
 	# Call the user-defined rule
 	resource_role_permission(resource, role, action);
+
+# a role implies itself
+resource_role_implication_ONLY_IF(resource, role, resource, role);
 
 # # Necessary condition: a path must exist from role->resource->implied_resource->implied_role in order to create a role implication
 # resource_role_implication(resource, role, implied_resource, implied_role) only if
@@ -87,16 +91,14 @@ resource_role_permission_ONLY_IF(resource, role, action) if
 
 resource_role_implication_ONLY_IF(resource, role, implied_resource, implied_role) if
 	resource_role(resource, role) and
+	resource_role_implication(resource, role, implied_resource, implied_role) and
 	(resource = implied_resource or
 	ancestor_descendant(resource, implied_resource)) and
-	resource_role(implied_resource, implied_role) and
+	resource_role(implied_resource, implied_role);
 	# Call the user-defined rule
-	resource_role_implication(resource, role, implied_resource, implied_role);
 
-# a role implies itself
-resource_role_implication_ONLY_IF(resource, role, resource, role);
 
 ancestor_descendant(ancestor, descendant) if
 	parent_child(parent, descendant) and
 	parent = ancestor or
-	ancestor(ancestor, parent);
+	ancestor_descendant(ancestor, parent);
