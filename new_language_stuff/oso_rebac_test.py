@@ -29,15 +29,16 @@ class Repo:
 
 
 @dataclass(frozen=True)
-class Role:
+class Issue:
     name: str
-    resource: Union[Org, Repo]
+    repo: Repo
 
 
 oso = Oso()
 oso.register_class(User)
 oso.register_class(Repo)
 oso.register_class(Org)
+oso.register_class(Issue)
 oso.load_file("rebac_gitclub_gabe.polar")
 
 leina = User("leina")
@@ -46,6 +47,8 @@ oso_hq = Org("Oso")
 apple = Org("Apple")
 oso_repo = Repo(name="oso_repo", org=oso_hq)
 ios_repo = Repo(name="ios", org=apple)
+bug = Issue(name="bug", repo=oso_repo)
+laggy = Issue(name="laggy", repo=ios_repo)
 leina.assign_role(oso_hq, "owner")
 gabe.assign_role(oso_repo, "writer")
 
@@ -57,8 +60,11 @@ assert oso.is_allowed(leina, "list_repos", oso_hq)
 
 # from child-resource implication
 assert oso.is_allowed(leina, "read", oso_repo)
-
 assert not oso.is_allowed(leina, "read", ios_repo)
 
 # from same-resource implication
 assert oso.is_allowed(gabe, "read", oso_repo)
+
+# from cross-resource permission
+assert oso.is_allowed(leina, "edit", bug)
+assert not oso.is_allowed(leina, "edit", laggy)
