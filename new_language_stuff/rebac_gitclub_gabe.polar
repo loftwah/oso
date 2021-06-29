@@ -1,34 +1,34 @@
 allow(actor, action, resource) if
-  relationship(action, "IS_VALID_ACTION_FOR", resource) and
-  relationship(permitted_role, "internal_HAS_PERMISSION", action, resource) and
-  relationship(role, "internal_IMPLIES", permitted_role) and
+  internal(action, "IS_VALID_ACTION_FOR", resource) and
+  internal(permitted_role, "HAS_PERMISSION", action, resource) and
+  internal(role, "IMPLIES", permitted_role) and
   relationship(actor, "CAN_ASSUME_ROLE", role);
 
-relationship(role, "internal_IMPLIES", role);
-relationship(role, "internal_IMPLIES", implied_role) if
+internal(role, "IMPLIES", role);
+internal(role, "IMPLIES", implied_role) if
   relationship(intermediate, "IMPLIES", implied_role) and
-  relationship(role, "internal_IMPLIES", intermediate);
+  internal(role, "IMPLIES", intermediate);
 
 # Role has local permission.
-relationship({name: name, resource: resource}, "internal_HAS_PERMISSION", action, resource) if
+internal({name: name, resource: resource}, "HAS_PERMISSION", action, resource) if
   relationship(name, "HAS_PERMISSION", action, resource);
 
 # Role has cross-resource permission.
-relationship({name: name, resource: ancestor}, "internal_HAS_PERMISSION", action, resource) if
-  relationship(ancestor, "IS_ANCESTOR", resource) and
+internal({name: name, resource: ancestor}, "HAS_PERMISSION", action, resource) if
+  internal(ancestor, "IS_ANCESTOR", resource) and
   relationship(ancestor, name, "HAS_PERMISSION", action, resource);
 
-relationship(ancestor, "IS_ANCESTOR", resource) if
+internal(ancestor, "IS_ANCESTOR", resource) if
   relationship(ancestor, "IS_PARENT", resource);
-relationship(ancestor, "IS_ANCESTOR", resource) if
+internal(ancestor, "IS_ANCESTOR", resource) if
   relationship(intermediate, "IS_PARENT", resource) and
-  relationship(ancestor, "IS_ANCESTOR", intermediate);
+  internal(ancestor, "IS_ANCESTOR", intermediate);
 
-relationship(action, "IS_VALID_ACTION_FOR", resource) if
+internal(action, "IS_VALID_ACTION_FOR", resource) if
   relationship(_, "HAS_PERMISSION", action, resource) or
   relationship(_, _, "HAS_PERMISSION", action, resource);
 
-relationship(name, "IS_VALID_ROLE_FOR", resource) if
+internal(name, "IS_VALID_ROLE_FOR", resource) if
   relationship(name, "HAS_PERMISSION", _, resource) or
   relationship(_, name, "HAS_PERMISSION", _, resource);
 
