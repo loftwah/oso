@@ -32,13 +32,8 @@ resource_role(resource, role) if
 	resource_role(ancestor, role);
 
 # Necessary (only if) conditions must be met in order for this rule to hold
-role_permission(role, "invite", resource) if
-	# resource_role(resource, role) and
-	role.name = "owner";
-
-role_permission(role, "create_repo", resource) if
-	# resource_role(resource, role) and
-	role.name = "member";
+role_permission(role: {name: "owner"}, "invite", resource: Org);
+role_permission(role: {name: "member"}, "create_repo", resource: Org);
 
 # Must check that resource = implied_resource OR ancestor_descendent(resource, implied_resource)
 role_implication(role, _implied_role: {name: "member", resource: resource}) if
@@ -75,13 +70,8 @@ resource_role(resource: Repo, role) if
 	role = {name: role_name, resource: resource};
 
 # Necessary (only if) conditions must be met in order for this rule to hold
-role_permission(role, "pull", resource: Repo) if
-	# resource_role(resource, role) and
-	role.name = "reader";
-
-role_permission(role, "push", resource: Repo) if
-	# resource_role(resource, role) and
-	role.name = "writer";
+role_permission(role: {name: "reader"}, "pull", resource: Repo);
+role_permission(role: {name: "writer"}, "push", resource: Repo);
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_implication(role, _implied_role: {name: "reader", resource: repo}) if
@@ -97,13 +87,8 @@ permission(action, _resource: Issue) if
 		"delete"
 	];
 
-role_permission(role, "delete", resource: Issue) if
-	# resource_role(resource, role) and
-	role.name = "owner";
-
-role_permission(role, "edit", resource: Issue) if
-	# resource_role(resource, role) and
-	role.name = "writer";
+role_permission(role: {name: "owner"}, "delete", resource: Issue);
+role_permission(role: {name: "writer"}, "edit", resource: Issue);
 
 parent_child(parent, child: Issue) if
 	child.repo = parent;
