@@ -33,11 +33,11 @@ resource_role(resource, role) if
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_permission(role, "invite", resource) if
-	resource_role(resource, role) and
+	# resource_role(resource, role) and
 	role.name = "owner";
 
 role_permission(role, "create_repo", resource) if
-	resource_role(resource, role) and
+	# resource_role(resource, role) and
 	role.name = "member";
 
 # Must check that resource = implied_resource OR ancestor_descendent(resource, implied_resource)
@@ -76,11 +76,11 @@ resource_role(resource: Repo, role) if
 
 # Necessary (only if) conditions must be met in order for this rule to hold
 role_permission(role, "pull", resource: Repo) if
-	resource_role(resource, role) and
+	# resource_role(resource, role) and
 	role.name = "reader";
 
 role_permission(role, "push", resource: Repo) if
-	resource_role(resource, role) and
+	# resource_role(resource, role) and
 	role.name = "writer";
 
 # Necessary (only if) conditions must be met in order for this rule to hold
@@ -88,6 +88,25 @@ role_implication(role, _implied_role: {name: "reader", resource: repo}) if
 	resource_role(repo, role) and
 	role.name = "writer";
 
+# Issue Resource
+resource(_: Issue);
+permission(action, _resource: Issue) if
+	action in
+	[
+		"edit",
+		"delete"
+	];
+
+role_permission(role, "delete", resource: Issue) if
+	# resource_role(resource, role) and
+	role.name = "owner";
+
+role_permission(role, "edit", resource: Issue) if
+	# resource_role(resource, role) and
+	role.name = "writer";
+
+parent_child(parent, child: Issue) if
+	child.repo = parent;
 
 ##### OSO-DEFINED #####
 
@@ -95,13 +114,17 @@ allow(actor, action, resource) if
 	resource(resource) and
 	actor(actor) and
 	permission(action, resource) and
-	role_permission(implied_role, action, resource) and
+	INTERNAL_role_permission(implied_role, action, resource) and
 	# debug(implied_role) and
 	NESTED_role_implication(role, implied_role) and
 	# debug(role) and
 	actor_role(actor, role);
 
 # TODO: implications--probably port this from polar_roles
+
+INTERNAL_role_permission(role, action, resource) if
+	resource_role(resource, role) and
+	role_permission(role, action, resource);
 
 INTERNAL_role_implication(role, implied_role) if
 	resource_role(implied_role.resource, role) and
@@ -111,7 +134,6 @@ NESTED_role_implication(role, role);
 NESTED_role_implication(role, implied_role) if
 	role_implication(intermediate, implied_role) and
 	NESTED_role_implication(role, intermediate);
-
 
 ancestor_descendant(ancestor, descendant) if
 	parent_child(parent, descendant) and

@@ -104,7 +104,7 @@ def test_policy(policy_file):
 
 def main():
     test_policy("rebac_gitclub_gabe.polar")
-    # test_policy("rebac_gitclub_leina.polar")
+    test_policy("rebac_gitclub_leina.polar")
 
 
 if __name__ == "__main__":
