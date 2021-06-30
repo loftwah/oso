@@ -1,3 +1,5 @@
+############################# START INTERNAL POLICY ############################
+
 allow(actor, action, resource) if
   valid_action_for_resource(action, resource) and
   role_grants_permission(permitted_role, action, resource) and
@@ -33,11 +35,9 @@ valid_action_for_resource(action, resource) if
   can(resource, _, action) or
   can(_, _, action, resource);
 
-# valid_role_for_resource(name, resource) if
-#   role_grants_permission(name, _, resource) or
-#   role_grants_permission(_, name, _, resource);
+############################## END INTERNAL POLICY #############################
 
-# User's policy
+############################### START USER POLICY ##############################
 
 can(_: Org, "owner", "invite");
 can(_: Org, "member", "create_repo");
@@ -58,3 +58,5 @@ parent_child(org, repo: Repo) if
   org = repo.org;
 parent_child(repo, issue: Issue) if
   repo = issue.repo;
+
+################################ END USER POLICY ###############################
