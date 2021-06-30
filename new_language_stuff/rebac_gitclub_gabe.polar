@@ -5,9 +5,15 @@ allow(actor, action, resource) if
   actor_can_assume_role(actor, role);
 
 internal_role_implication(role, role);
-internal_role_implication(role, implied_role) if
-  role_implication(resource, name, implied_role.resource, implied_role.name) and
-  internal_role_implication(role, {name: name, resource: resource});
+# Local role implication.
+internal_role_implication(role, {name: implied_name, resource: implied_resource}) if
+  role_implication(implied_resource, name, implied_name) and
+  internal_role_implication(role, {name: name, resource: implied_resource});
+# Cross-resource role implication.
+internal_role_implication(role, {name: implied_name, resource: implied_resource}) if
+  parent_child(parent, implied_resource) and
+  role_implication(parent, name, implied_resource, implied_name) and
+  internal_role_implication(role, {name: name, resource: parent});
 
 # Role has local permission.
 internal_role_has_permission({name: name, resource: resource}, action, resource) if
@@ -28,9 +34,9 @@ valid_action_for_resource(action, resource) if
   role_grants_permission(_, action, resource) or
   role_grants_permission(_, _, action, resource);
 
-valid_role_for_resource(name, resource) if
-  role_grants_permission(name, _, resource) or
-  role_grants_permission(_, name, _, resource);
+# valid_role_for_resource(name, resource) if
+#   role_grants_permission(name, _, resource) or
+#   role_grants_permission(_, name, _, resource);
 
 # User's policy
 
@@ -44,10 +50,10 @@ role_grants_permission(_: Repo, "writer", "edit", _: Issue);
 actor_can_assume_role(actor, role) if
   actor.has_role_for_resource(role.name, role.resource);
 
-role_implication(org, "owner", org: Org, "member");
-role_implication(org, "owner", repo: Repo, "writer") if parent_child(org, repo);
-role_implication(org, "member", repo: Repo, "reader") if parent_child(org, repo);
-role_implication(repo, "writer", repo: Repo, "reader");
+role_implication(_: Org, "owner", "member");
+role_implication(_: Org, "owner", _: Repo, "writer");
+role_implication(_: Org, "member", _: Repo, "reader");
+role_implication(_: Repo, "writer", "reader");
 
 parent_child(org, repo: Repo) if
   org = repo.org;
