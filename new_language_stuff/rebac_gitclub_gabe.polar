@@ -6,8 +6,8 @@ allow(actor, action, resource) if
 
 internal_role_implication(role, role);
 internal_role_implication(role, implied_role) if
-  role_implication(intermediate, implied_role) and
-  internal_role_implication(role, intermediate);
+  role_implication(resource, name, implied_role.resource, implied_role.name) and
+  internal_role_implication(role, {name: name, resource: resource});
 
 # Role has local permission.
 internal_role_has_permission({name: name, resource: resource}, action, resource) if
@@ -44,24 +44,10 @@ role_grants_permission(_: Repo, "writer", "edit", _: Issue);
 actor_can_assume_role(actor, role) if
   actor.has_role_for_resource(role.name, role.resource);
 
-# org:owner implies org:member
-role_implication(role, _: {name: "member", resource: org}) if
-  org matches Org and # necessary if you have roles w/ the same name on different resource types
-  role = {name: "owner", resource: org};
-# org:owner implies repo:writer
-role_implication(role, _: {name: "writer", resource: repo}) if
-  repo matches Repo and
-  parent_child(org, repo) and
-  role = {name: "owner", resource: org};
-# org:member implies repo:reader
-role_implication(role, _: {name: "reader", resource: repo}) if
-  repo matches Repo and
-  parent_child(org, repo) and
-  role = {name: "member", resource: org};
-# repo:writer implies repo:reader
-role_implication(role, _: {name: "reader", resource: repo}) if
-  repo matches Repo and
-  role = {name: "writer", resource: repo};
+role_implication(org, "owner", org: Org, "member");
+role_implication(org, "owner", repo: Repo, "writer") if parent_child(org, repo);
+role_implication(org, "member", repo: Repo, "reader") if parent_child(org, repo);
+role_implication(repo, "writer", repo: Repo, "reader");
 
 parent_child(org, repo: Repo) if
   org = repo.org;
