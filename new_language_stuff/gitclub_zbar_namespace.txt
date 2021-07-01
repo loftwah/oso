@@ -1,0 +1,39 @@
+
+name: "repo"
+
+relation {
+	name: "reader"
+	userset_rewrite {
+		union {
+			child { _this {} }
+			child { computed_userset { relation: "writer"} }
+			child { tuple_to_userset {
+				tupleset { relation: "parent" }
+				computed_userset {
+					object: $TUPLE_USERSET_OBJECT
+					relation: "member"
+			}}	}
+}	}	}
+relation {
+	name: "writer"
+	userset_rewrite {
+		union {
+			child { _this {} }
+			child { computed_userset {relation: "triage"} }
+}	}	}
+relation {
+	name: "triage"
+	userset_rewrite {
+		union {
+			child { _this {} }
+			child { computed_userset {relation: "maintain"} }
+}	}	}
+relation {
+	name: "maintain"
+	userset_rewrite {
+		union {
+			child { _this {} }
+			child { computed_userset {relation: "admin"} }
+}	}	}
+
+relation { name: "admin" }
