@@ -7,7 +7,7 @@ type User(Actor) {
 	id -> int: this.uuid	# mapping an app attribute to the required attribute name in Polar
 	has_role(role_name, org) -> bool
 
-	# Custom attributes/methods
+	# Custom attributes/method declarations (can only be bools for now)
 	is_super_admin -> bool
 }
 
@@ -23,13 +23,19 @@ type Repo(Resource) {
 	# Optional attributes defined by interface
 	parent -> Org: this.org
 
-	roles {
+	# Idea for rules inside of types
+	rules {
 		user can...
+		user has_role...
+
 		user has_role role if user.has_role(role)
 		user has_role "member" if user has_role "owner"
 
-		user can "read" if user has_role "owner" on this.parent
-		user can "read" if user has_role "owner" on org  and org is_parent this
+		user can "pull" if user has_role "reader"
+		user has_role "reader" if user has_role "member" on this.parent
+
+		user can "push" if user has_role "writer"
+		user has_role "writer" if user has_role "owner" on this.parent
 	}
 }
 
@@ -94,57 +100,3 @@ has_role(user: User, "member", org: Org) if
 # Role implication (related resource)
 has_role(user: User, "reader", repo: Repo) if
 	has_role(user, "member", repo.parent);
-
-
-
-
-
-# Permission record
-(user, "action", "resource");
-		^^^^^^^^^^^^^^^^^^^
-# User -> Permission
-("user", "action", "resource")
-
-# Role record
-(user, "role_name", "resource")
-
-# User -> Role
-("user", "role_name", "resource");
-
-# Role -> Permission *same resource*
-(user, "role_name", "resource") => (user, "action", "resource")
-(user, "action", "resource") if (user, "role_name", "resource")
-
-# Parent-> Child
-resource2 = resource1.parent
-# ("resource1", "resource2")
-
-# Role -> Permission *related resource*
-(user, "role_name", resource1) & (resource1, resource2) => (user, "action", resource2);
-
-(user, "action", resource2) if
-	(user, "role_name", resource1) and
-	(resource1, resource2);
-
-
-# User -> Role (implied)
-(user, "role_name", resource1)
-(user, "role_name", resource2)
-(resource1, resource2)
-
-(user, "role_name", resource2) if
-	(user, "role_name", resource1) and
-	(resource1, resource2);
-
-(user, "role_name", resource2) if
-	(user, "role_name", resource2.parent);
-
-
-
-# WHAT WE ARE ALWAYS QUERYING FOR:
-("user", "action" "resource")
-
-# We CAN ALWAYS Get HERE THROUGH IMPLICATIONS BETWEEN OTHER RELATIONS
-
-
-
