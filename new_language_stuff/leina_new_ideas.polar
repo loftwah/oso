@@ -3,12 +3,12 @@
 ####################
 
 type User(Actor) {
-	# Required attributes/methods
+	# Built-in allowed attributes/methods
 	id -> int: this.uuid	# mapping an app attribute to the required attribute name in Polar
 	has_role(role_name, org) -> bool
 
-	# Custom attributes/method declarations (can only be bools for now)
-	is_super_admin -> bool
+	# User-defined attributs
+	is_admin -> bool
 }
 
 type Org(Resource) {
@@ -25,17 +25,16 @@ type Repo(Resource) {
 
 	# Idea for rules inside of types
 	rules {
-		user can...
-		user has_role...
+		# user can...
+		# user has_role...
 
 		user has_role role if user.has_role(role)
-		user has_role "member" if user has_role "owner"
+		user has_role "reader" if user has_role "member" on this.parent
+		user has_role "writer" if user has_role "owner" on this.parent
 
 		user can "pull" if user has_role "reader"
-		user has_role "reader" if user has_role "member" on this.parent
-
+		user can "read" if user.is_admin
 		user can "push" if user has_role "writer"
-		user has_role "writer" if user has_role "owner" on this.parent
 	}
 }
 
