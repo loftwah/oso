@@ -1,5 +1,7 @@
 
 # Leina policy
+# This could maybe evaluate if we did some hacky parser stuff and rewrote some
+# of the rules based on the namespace
 
 resource Org: Org {
 
