@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import Union
+from typing import Optional
 from oso import Oso
 from dataclasses import dataclass
 
@@ -22,6 +22,7 @@ class User:
 @dataclass(frozen=True)
 class Org:
     name: str
+    owner: Optional[User] = None
 
     def __repr__(self):
         return f"Org({self.name})"
@@ -40,6 +41,7 @@ class Repo:
 class Issue:
     name: str
     repo: Repo
+    created_by: Optional[User] = None
 
 
 def test_policy(policy_file):
@@ -54,11 +56,14 @@ def test_policy(policy_file):
     leina = User("leina")
     gabe = User("gabe")
     steve = User("steve")
-    oso_hq = Org("OsoHQ")
+    dave = User("dave")
+    sam = User("sam")
+    oso_hq = Org("OsoHQ", owner=sam)
     apple = Org("Apple")
     oso_repo = Repo(name="oso", org=oso_hq)
     ios_repo = Repo(name="ios", org=apple)
     bug = Issue(name="bug", repo=oso_repo)
+    dave_bug = Issue(name="bug", repo=oso_repo, created_by=dave)
     laggy = Issue(name="laggy", repo=ios_repo)
     leina.assign_role(oso_hq, "owner")
     gabe.assign_role(oso_repo, "writer")
@@ -100,6 +105,13 @@ def test_policy(policy_file):
 
     # from same-resource implication
     assert oso.is_allowed(gabe, "pull", oso_repo)
+
+    # resource-user relationships
+    assert not oso.is_allowed(dave, "delete", bug)
+    assert oso.is_allowed(dave, "delete", dave_bug)
+    assert not oso.is_allowed(sam, "delete", laggy)
+    assert oso.is_allowed(sam, "delete", bug)
+    assert oso.is_allowed(sam, "delete", dave_bug)
 
     # TODO: child-resource implication that has a cross-resource permission
 
