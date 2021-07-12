@@ -375,4 +375,26 @@ mod tests {
             }
         ));
     }
+
+    #[test]
+    fn test_parse_infix_notation() {
+        let cases = vec![
+            (
+                // Single-word infix
+                "frobbed_by(x, y) if x frobs y;",
+                // TODO(gj): if they wrote it infix, print it infix.
+                "frobbed_by(x, y) if frobs(x, y);",
+            ),
+            (
+                // Multi-word infix with underscores
+                "enfrobnicated(x, y) if y frobbed_by x;",
+                "enfrobnicated(x, y) if frobbed_by(y, x);",
+            ),
+        ];
+
+        for (input, output) in cases {
+            let parsed = parse_rules(0, input).unwrap()[0].to_polar();
+            assert_eq!(parsed, output);
+        }
+    }
 }
