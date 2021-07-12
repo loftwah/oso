@@ -1,29 +1,29 @@
 ############################### START RBAC POLICY ##############################
 
 allow(user: User, "invite", org: Org) if
-  has_role(user, "owner", org);
+  user has_role "owner" on org;
 allow(user: User, "create_repo", org: Org) if
-  has_role(user, "member", org);
+  user has_role "member" on org;
 allow(user: User, "pull", repo: Repo) if
-  has_role(user, "reader", repo);
+  user has_role "reader" on repo;
 allow(user: User, "push", repo: Repo) if
-  has_role(user, "writer", repo);
+  user has_role "writer" on repo;
 allow(user: User, "delete", issue: Issue) if
-  has_role(user, "owner", issue.repo.org);
+  user has_role "owner" on issue.repo.org;
 allow(user: User, "edit", issue: Issue) if
-  has_role(user, "writer", issue.repo);
+  user has_role "writer" on issue.repo;
 
-has_role(user: User, role, resource) if
+has_role_on(user: User, role, resource) if
   user.has_role_for_resource(role, resource);
 
-has_role(user: User, "member", org: Org) if
-  has_role(user, "owner", org);
-has_role(user: User, "writer", repo: Repo) if
-  has_role(user, "owner", repo.org);
-has_role(user: User, "reader", repo: Repo) if
-  has_role(user, "member", repo.org);
-has_role(user: User, "reader", repo: Repo) if
-  has_role(user, "writer", repo);
+has_role_on(user: User, "member", org: Org) if
+  user has_role "owner" on org;
+has_role_on(user: User, "writer", repo: Repo) if
+  user has_role "owner" on repo.org;
+has_role_on(user: User, "reader", repo: Repo) if
+  user has_role "member" on repo.org;
+has_role_on(user: User, "reader", repo: Repo) if
+  user has_role "writer" on repo;
 
 ################################ END RBAC POLICY ###############################
 
