@@ -1,27 +1,25 @@
-allow(user: User, action, resource) if user can action on resource;
+allow(user: User, action, resource) if user can action to resource;
 
-user can "invite" on org: Org if user has_role "owner" for org;
-user can "create_repo" on org: Org if user has_role "member" for org;
-user can "pull" on repo: Repo if user has_role "reader" for repo;
-user can "push" on repo: Repo if user has_role "writer" for repo;
-user can "delete" on issue: Issue if user has_role "owner" for issue.repo.org;
-user can "edit" on issue: Issue if user has_role "writer" for issue.repo;
+############################### START RBAC POLICY ##############################
 
-user has_role role for resource if user.has_role_for_resource(role, resource);
+user can "invite" to org: Org if user has_role "owner" on org;
+user can "create_repo" for org: Org if user has_role "member" on org;
+user can "pull" from repo: Repo if user has_role "reader" on repo;
+user can "push" to repo: Repo if user has_role "writer" on repo;
+user can "delete" an issue: Issue if user has_role "owner" on issue.repo.org;
+user can "edit" an issue: Issue if user has_role "writer" on issue.repo;
 
-user has_role "member" for org: Org if user has_role "owner" for org;
-user has_role "writer" for repo: Repo if user has_role "owner" for repo.org;
-user has_role "reader" for repo: Repo if user has_role "member" for repo.org;
-user has_role "reader" for repo: Repo if user has_role "writer" for repo;
+user has_role role on resource if user.has_role_for_resource(role, resource);
 
-################################ END RBAC POLICY ###############################
+user has_role "member" on org: Org if user has_role "owner" on org;
+user has_role "writer" on repo: Repo if user has_role "owner" on repo.org;
+user has_role "reader" on repo: Repo if user has_role "member" on repo.org;
+user has_role "reader" on repo: Repo if user has_role "writer" on repo;
 
 ############################# START OWNERSHIP POLICY ###########################
 
-user can "delete" on issue: Issue if user created issue;
-user can "delete" on issue: Issue if user owns issue.repo.org;
+user can "delete" an issue: Issue if user created issue;
+user can "delete" an issue: Issue if user owns issue.repo.org;
 
-user created _: Issue{created_by: user};
-user owns _: Org{owner: user};
-
-############################## END OWNERSHIP POLICY ############################
+user created issue: Issue if issue.created_by = user;
+user owns org: Org if org.owner = user;
