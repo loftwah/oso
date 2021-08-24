@@ -45,13 +45,13 @@ then `"steve"` would be allowed to `"get"` that document.
 
 Data filtering is asking a slightly different question of the policy. Instead of asking "Can this actor do this action on this specific resource?", we want to ask
 "What are all the resources that this actor can do this specific action on?".  One way to answer this question would be to take every Document in the system and call
-`is_allowed` on it. This isn't efficient and many times is just impossible. There could be thousands of Documents in a database but only 3 that have the owner "steve".
-Instead of fetching every document and passing it into oso, we would like to ask our database for only the documents that have the owner "steve". This process of
+`is_allowed` on it. This isn't efficient and many times is just impossible. There could be thousands of Documents in a database but only 3 that have the owner `"steve"`.
+Instead of fetching every document and passing it into oso, we would like to ask our database for only the documents that have the owner `"steve"`. This process of
 filtering the data in our data store, based on the logic in our policy is what we call "Data Filtering".
 
 {{% callout "ORM Integrations" "blue" %}}
 
-If you are using one of our ORM integration libraries like sqlalchemy-oso or django-oso data filtering is already built in and you won't have to worry about integrating
+If you are using one of our ORM integration libraries like `sqlalchemy-oso` or `django-oso` data filtering is already built in and you won't have to worry about integrating
 it yourself. See docs for the ORM library instead.
 
 {{% /callout %}}
