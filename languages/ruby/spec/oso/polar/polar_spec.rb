@@ -739,6 +739,25 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
     end
   end
 
+  it 'can unify a partial with an external instance' do
+    stub_const('Foo', Class.new)
+    stub_const('Bar', Class.new do
+      def foo
+        Foo.new
+      end
+    end)
+
+    subject.register_class(Foo)
+    subject.register_class(Bar)
+
+    subject.load_str 'f(partial: Foo, _: Bar{ foo: partial });'
+
+    args = ['f', Oso::Polar::Variable.new('partial'), Bar.new]
+    results = subject.query_rule(*args, accept_expression: true).to_a[0]
+
+    expect(results['partial']).to be_instance_of(Foo)
+  end
+
   # test_nan_inf
   it 'handles ±∞ and NaN' do
     subject.register_constant(Float::INFINITY, name: 'inf')
