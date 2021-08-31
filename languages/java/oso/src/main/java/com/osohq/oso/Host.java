@@ -9,13 +9,32 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
+import java.util.function.Function;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class Host implements Cloneable {
   private Ffi.Polar ffiPolar;
-  private Map<String, Class<?>> classes;
   private Map<Long, Object> instances;
+  private Map<String, UserType> types;
+
+  class UserType {
+    public String name;
+    public Class<?> cls;
+    public Map<String, Class<?>> fields;
+    public Function<?,?> buildQuery;
+    public Function<?,?> execQuery;
+    public Function<?,?> combineQuery;
+
+    public UserType(String name, Class<?> cls, Map<String, Class<?>> fields) {
+      this.name = name;
+      this.cls = cls;
+      this.fields = fields;
+      this.buildQuery = Function.identity();
+      this.execQuery = Function.identity();
+      this.combineQuery = Function.identity();
+    }
+  }
 
   // Set to true to accept an expression from the core in toJava.
   protected boolean acceptExpression;
@@ -23,16 +42,16 @@ public class Host implements Cloneable {
   public Host(Ffi.Polar polarPtr) {
     acceptExpression = false;
     ffiPolar = polarPtr;
-    classes = new HashMap<String, Class<?>>();
     instances = new HashMap<Long, Object>();
+    types = new HashMap<String, UserType>();
   }
 
   @Override
   public Host clone() {
     Host host = new Host(ffiPolar);
-    host.classes.putAll(classes);
     host.instances.putAll(instances);
     host.acceptExpression = acceptExpression;
+    host.types.putAll(types);
     return host;
   }
 
@@ -42,8 +61,8 @@ public class Host implements Cloneable {
 
   /** Get a registered Java class. */
   public Class<?> getClass(String name) throws Exceptions.UnregisteredClassError {
-    if (classes.containsKey(name)) {
-      return classes.get(name);
+    if (types.containsKey(name)) {
+      return types.get(name).cls;
     } else {
       throw new Exceptions.UnregisteredClassError(name);
     }
@@ -55,12 +74,12 @@ public class Host implements Cloneable {
    * @param name The name used to reference the class from within Polar.
    * @throws Exceptions.DuplicateClassAliasError If the name is already registered.
    */
-  public String cacheClass(Class<?> cls, String name) throws Exceptions.DuplicateClassAliasError {
-    if (classes.containsKey(name)) {
+  public String cacheClass(Class<?> cls, String name, Map<String, Class<?>> fields) throws Exceptions.DuplicateClassAliasError {
+    if (types.containsKey(name)) {
       throw new Exceptions.DuplicateClassAliasError(
-          name, classes.get(name).getName(), cls.getName());
+          name, types.get(name).cls.getName(), cls.getName());
     }
-    classes.put(name, cls);
+    types.put(name, new UserType(name, cls, fields));
     return name;
   }
 
@@ -93,7 +112,7 @@ public class Host implements Cloneable {
       throws Exceptions.OsoException {
     Constructor<?> constructor = null;
     // Try to find a constructor applicable to the supplied arguments.
-    Class<?> cls = classes.get(className);
+    Class<?> cls = types.get(className).cls;
     if (cls == null) {
       throw new Exceptions.UnregisteredClassError(className);
     }

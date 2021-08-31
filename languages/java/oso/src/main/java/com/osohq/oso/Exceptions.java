@@ -303,6 +303,12 @@ public class Exceptions {
     }
   }
 
+  public static class DataFilteringError extends OsoException {
+    public DataFilteringError(String msg) {
+      super(msg);
+    }
+  }
+
   public static class UnknownError extends OperationalError {
     public UnknownError(String msg, Map<String, Object> details) {
       super(msg, details);

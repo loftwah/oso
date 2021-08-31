@@ -242,7 +242,11 @@ public class Polar {
   /** Register a Java class with Polar using an alias. */
   public void registerClass(Class<?> cls, String name)
       throws Exceptions.DuplicateClassAliasError, Exceptions.OsoException {
-    host.cacheClass(cls, name);
+    registerClass(cls, name, new HashMap<String, Class<?>>());
+  }
+
+  public void registerClass(Class<?> cls, String name, Map<String, Class<?>> fields) {
+    host.cacheClass(cls, name, fields);
     registerConstant(cls, name);
   }
 

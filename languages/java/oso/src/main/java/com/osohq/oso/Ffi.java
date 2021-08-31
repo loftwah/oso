@@ -53,6 +53,12 @@ public class Ffi {
       return checkResult(result);
     }
 
+    protected String buildFilterPlan(String types, String partials, String variable, String classTag) {
+      String plan = polarLib.polar_build_filter_plan(ptr, types, partials, variable, classTag);
+      processMessages();
+      return checkResult(plan);
+    }
+
     protected Query newQueryFromStr(String queryStr) throws Exceptions.OsoException {
       Pointer queryPtr = polarLib.polar_new_query(ptr, queryStr, 0);
       processMessages();
@@ -250,6 +256,8 @@ public class Ffi {
     int polar_enable_roles(Pointer polar_ptr);
 
     int polar_validate_roles_config(Pointer polar_ptr, String results);
+
+    String polar_build_filter_plan(Pointer polar_ptr, String types, String partials, String variable, String class_tag);
   }
 
   protected Ffi() {
@@ -324,6 +332,14 @@ public class Ffi {
       throw new Error().get();
     } else {
       return p;
+    }
+  }
+
+  private String checkResult(String s) throws Exceptions.OsoException {
+    if (s == null) {
+      throw new Error().get();
+    } else {
+      return s;
     }
   }
 
