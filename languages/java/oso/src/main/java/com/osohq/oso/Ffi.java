@@ -54,12 +54,12 @@ public class Ffi {
       return checkResult(result);
     }
 
-    protected FilterPlan buildFilterPlan(String types, String partials, String variable, String classTag) {
+    protected FilterPlan buildFilterPlan(Host host, String types, String partials, String variable, String classTag) {
       String plan = polarLib.polar_build_filter_plan(ptr, types, partials, variable, classTag);
       processMessages();
       plan = checkResult(plan);
       JSONObject json = (JSONObject) new JSONTokener(plan).nextValue();
-      return new FilterPlan(json, classTag);
+      return new FilterPlan(host, json, classTag);
     }
 
     protected Query newQueryFromStr(String queryStr) throws Exceptions.OsoException {

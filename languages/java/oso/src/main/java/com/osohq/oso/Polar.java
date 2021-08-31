@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -76,6 +78,25 @@ public class Polar {
     } catch (FileNotFoundException e) {
       throw new Exceptions.PolarFileNotFoundError(filename);
     }
+  }
+
+  public Host.UserType getClass(String name) {
+    return this.host.types.get(name);
+  }
+
+  public void configureDataFiltering(
+    Function<List<FilterPlan.Constraint>, Object> build,
+    Function<Object, List<Object>> exec,
+    BiFunction<Object, Object, Object> combine
+  ) {
+    host.configureDataFiltering(build, exec, combine);
+  }
+
+  public void configureDataFiltering(
+    Function<Object, List<Object>> exec,
+    BiFunction<Object, Object, Object> combine
+  ) {
+    host.configureDataFiltering(host.buildQuery, exec, combine);
   }
 
   /**
@@ -235,9 +256,15 @@ public class Polar {
   }
 
   public List<Object> authorizedResources(Object actor, String action, Class<?> cls) {
+    Object query = authorizedQuery(actor, action, cls);
+    Host.UserType type = host.types.get(cls);
+    return type.execQuery.apply(query);
+  }
+
+  public Object authorizedQuery(Object actor, String action, Class<?> cls) {
     Variable resource = new Variable("resource");
     List<Object> args =
-      List.of(resource, new Pattern(cls.getName(), new HashMap<String, Object>()));
+      List.of(resource, new Pattern(host.types.get(cls).name, new HashMap<String, Object>()));
     args = List.of(new Expression(Operator.Isa, args));
     Expression typeConstraint = new Expression(Operator.And, args);
     Map<String, Object> bindings = Map.of("resource", typeConstraint);
@@ -252,31 +279,36 @@ public class Polar {
         out.put(outer);
       }
 
-    FilterPlan filterPlan =
+    return
       ffiPolar.buildFilterPlan(
+        this.host,
         host.serializeTypes(),
         out.toString(),
         "resource",
-        cls.getName());
-
-    return null;
+        host.types.get(cls).name
+      ).buildQuery();
   }
 
   /** Register a Java class with Polar. */
-  public void registerClass(Class<?> cls)
+  public Host.UserType registerClass(Class<?> cls)
       throws Exceptions.DuplicateClassAliasError, Exceptions.OsoException {
-    registerClass(cls, cls.getName());
+    return registerClass(cls, cls.getName());
   }
 
   /** Register a Java class with Polar using an alias. */
-  public void registerClass(Class<?> cls, String name)
+  public Host.UserType registerClass(Class<?> cls, String name)
       throws Exceptions.DuplicateClassAliasError, Exceptions.OsoException {
-    registerClass(cls, name, new HashMap<String, Host.TypeSpec>());
+    return registerClass(cls, name, new HashMap<String, Host.TypeSpec>());
   }
 
-  public void registerClass(Class<?> cls, String name, Map<String, Host.TypeSpec> fields) {
-    host.cacheClass(cls, name, fields);
+  public Host.UserType registerClass(Class<?> cls, String name, Map<String, Host.TypeSpec> fields) {
+    Host.UserType type = host.cacheClass(cls, name, fields);
     registerConstant(cls, name);
+    return type;
+  }
+
+  public Host.UserType registerClass(Class<?> cls, Map<String, Host.TypeSpec> fields) {
+    return registerClass(cls, cls.getName(), fields);
   }
 
   /** Registers `value` as a Polar constant variable called `name`. */

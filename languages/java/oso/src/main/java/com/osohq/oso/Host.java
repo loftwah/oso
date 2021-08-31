@@ -10,14 +10,17 @@ import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
 import java.util.function.Function;
+import java.util.function.BiFunction;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class Host implements Cloneable {
   private Ffi.Polar ffiPolar;
   private Map<Long, Object> instances;
-  private Map<String, UserType> types;
-
+  public Map<Object, UserType> types;
+  public Function<List<FilterPlan.Constraint>, Object> buildQuery;
+  public Function<Object, List<Object>> execQuery;
+  public BiFunction<Object, Object, Object> combineQuery;
 
   // Set to true to accept an expression from the core in toJava.
   protected boolean acceptExpression;
@@ -26,7 +29,20 @@ public class Host implements Cloneable {
     acceptExpression = false;
     ffiPolar = polarPtr;
     instances = new HashMap<Long, Object>();
-    types = new HashMap<String, UserType>();
+    types = new HashMap();
+    buildQuery = null;
+    execQuery = null;
+    combineQuery = null;
+  }
+
+  public void configureDataFiltering(
+    Function<List<FilterPlan.Constraint>, Object> build,
+    Function<Object, List<Object>> exec,
+    BiFunction<Object, Object, Object> combine
+  ) {
+    buildQuery = build;
+    execQuery = exec;
+    combineQuery = combine;
   }
 
   @Override
@@ -40,7 +56,7 @@ public class Host implements Cloneable {
 
   public String serializeTypes() {
     JSONObject out = new JSONObject();
-    for (UserType typ : types.values()) {
+    for (UserType typ : types.values().stream().collect(Collectors.toSet())) {
       JSONObject jsonFields = new JSONObject();
       Map<String, TypeSpec> fields = typ.fields;
       for (String key : fields.keySet())
@@ -69,13 +85,15 @@ public class Host implements Cloneable {
    * @param name The name used to reference the class from within Polar.
    * @throws Exceptions.DuplicateClassAliasError If the name is already registered.
    */
-  public String cacheClass(Class<?> cls, String name, Map<String, TypeSpec> fields) throws Exceptions.DuplicateClassAliasError {
+  public UserType cacheClass(Class<?> cls, String name, Map<String, TypeSpec> fields) throws Exceptions.DuplicateClassAliasError {
     if (types.containsKey(name)) {
       throw new Exceptions.DuplicateClassAliasError(
           name, types.get(name).cls.getName(), cls.getName());
     }
-    types.put(name, new UserType(name, cls, fields));
-    return name;
+    UserType type = new UserType(name, cls, fields, buildQuery, execQuery, combineQuery);
+    types.put(name, type);
+    types.put(cls, type);
+    return type;
   }
 
   /** Get a cached Java instance. */
@@ -418,21 +436,7 @@ public class Host implements Cloneable {
     public String serialize();
   }
 
-  class JavaClass implements TypeSpec {
-    public Host.UserType type;
-    public JavaClass(Host.UserType type) {
-      this.type = type;
-    }
-
-    public String serialize() {
-      JSONObject outer = new JSONObject(), inner = new JSONObject();
-      inner.put("class_tag", type.name);
-      outer.put("Base", inner);
-      return outer.toString();
-    }
-  }
-
-  class TypeRelation implements TypeSpec {
+  public static class TypeRelation implements TypeSpec {
     public RelationKind kind;
     public String otherClassName, myField, otherField;
 
@@ -465,19 +469,35 @@ public class Host implements Cloneable {
     }
   }
 
-  class UserType {
+  class UserType implements TypeSpec {
     public String name;
     public Class<?> cls;
     public Map<String, TypeSpec> fields;
-    public Function<?,?> buildQuery, execQuery, combineQuery;
+    public Function<List<FilterPlan.Constraint>, Object> buildQuery;
+    public Function<Object, List<Object>> execQuery;
+    public BiFunction<Object, Object, Object> combineQuery;
 
-    public UserType(String name, Class<?> cls, Map<String, TypeSpec> fields) {
+    public UserType(
+      String name,
+      Class<?> cls,
+      Map<String, TypeSpec> fields,
+      Function<List<FilterPlan.Constraint>, Object> buildQuery,
+      Function<Object, List<Object>> execQuery,
+      BiFunction<Object, Object, Object> combineQuery
+    ) {
       this.name = name;
       this.cls = cls;
       this.fields = fields;
-      this.buildQuery = Function.identity();
-      this.execQuery = Function.identity();
-      this.combineQuery = Function.identity();
+      this.buildQuery = buildQuery;
+      this.execQuery = execQuery;
+      this.combineQuery = combineQuery;
+    }
+
+    public String serialize() {
+      JSONObject outer = new JSONObject(), inner = new JSONObject();
+      inner.put("class_tag", name);
+      outer.put("Base", inner);
+      return outer.toString();
     }
   }
 }
