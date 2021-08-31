@@ -18,23 +18,6 @@ public class Host implements Cloneable {
   private Map<Long, Object> instances;
   private Map<String, UserType> types;
 
-  class UserType {
-    public String name;
-    public Class<?> cls;
-    public Map<String, Class<?>> fields;
-    public Function<?,?> buildQuery;
-    public Function<?,?> execQuery;
-    public Function<?,?> combineQuery;
-
-    public UserType(String name, Class<?> cls, Map<String, Class<?>> fields) {
-      this.name = name;
-      this.cls = cls;
-      this.fields = fields;
-      this.buildQuery = Function.identity();
-      this.execQuery = Function.identity();
-      this.combineQuery = Function.identity();
-    }
-  }
 
   // Set to true to accept an expression from the core in toJava.
   protected boolean acceptExpression;
@@ -53,6 +36,18 @@ public class Host implements Cloneable {
     host.acceptExpression = acceptExpression;
     host.types.putAll(types);
     return host;
+  }
+
+  public String serializeTypes() {
+    JSONObject out = new JSONObject();
+    for (UserType typ : types.values()) {
+      JSONObject jsonFields = new JSONObject();
+      Map<String, TypeSpec> fields = typ.fields;
+      for (String key : fields.keySet())
+        jsonFields.put(key, fields.get(key).serialize());
+      out.put(typ.name, jsonFields);
+    }
+    return out.toString();
   }
 
   protected void setAcceptExpression(boolean acceptExpression) {
@@ -74,7 +69,7 @@ public class Host implements Cloneable {
    * @param name The name used to reference the class from within Polar.
    * @throws Exceptions.DuplicateClassAliasError If the name is already registered.
    */
-  public String cacheClass(Class<?> cls, String name, Map<String, Class<?>> fields) throws Exceptions.DuplicateClassAliasError {
+  public String cacheClass(Class<?> cls, String name, Map<String, TypeSpec> fields) throws Exceptions.DuplicateClassAliasError {
     if (types.containsKey(name)) {
       throw new Exceptions.DuplicateClassAliasError(
           name, types.get(name).cls.getName(), cls.getName());
@@ -416,5 +411,73 @@ public class Host implements Cloneable {
       resArray.add(toJava(list.getJSONObject(i)));
     }
     return resArray;
+  }
+
+  enum RelationKind { PARENT, CHILDREN }
+  interface TypeSpec {
+    public String serialize();
+  }
+
+  class JavaClass implements TypeSpec {
+    public Host.UserType type;
+    public JavaClass(Host.UserType type) {
+      this.type = type;
+    }
+
+    public String serialize() {
+      JSONObject outer = new JSONObject(), inner = new JSONObject();
+      inner.put("class_tag", type.name);
+      outer.put("Base", inner);
+      return outer.toString();
+    }
+  }
+
+  class TypeRelation implements TypeSpec {
+    public RelationKind kind;
+    public String otherClassName, myField, otherField;
+
+    public TypeRelation(RelationKind kind, String otherClassName, String myField, String otherField) {
+      this.kind = kind;
+      this.otherClassName = otherClassName;
+      this.myField = myField;
+      this.otherField = otherField;
+    }
+
+    public String serialize() {
+      JSONObject outer = new JSONObject(), inner = new JSONObject();
+      inner.put("kind", serializeRelationKind());
+      inner.put("other_class_tag", otherClassName);
+      inner.put("my_field", myField);
+      inner.put("other_field", otherField);
+      outer.put("Relationship", inner);
+      return outer.toString();
+    }
+
+    private String serializeRelationKind() {
+      String out = null;
+      switch (kind) {
+        case PARENT:
+          out = "parent";
+        case CHILDREN:
+          out = "children";
+      }
+      return out;
+    }
+  }
+
+  class UserType {
+    public String name;
+    public Class<?> cls;
+    public Map<String, TypeSpec> fields;
+    public Function<?,?> buildQuery, execQuery, combineQuery;
+
+    public UserType(String name, Class<?> cls, Map<String, TypeSpec> fields) {
+      this.name = name;
+      this.cls = cls;
+      this.fields = fields;
+      this.buildQuery = Function.identity();
+      this.execQuery = Function.identity();
+      this.combineQuery = Function.identity();
+    }
   }
 }

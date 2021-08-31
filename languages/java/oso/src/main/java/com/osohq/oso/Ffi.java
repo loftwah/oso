@@ -9,6 +9,7 @@ import jnr.ffi.LibraryLoader;
 import jnr.ffi.Pointer;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 public class Ffi {
   // singleton variable
@@ -53,10 +54,12 @@ public class Ffi {
       return checkResult(result);
     }
 
-    protected String buildFilterPlan(String types, String partials, String variable, String classTag) {
+    protected FilterPlan buildFilterPlan(String types, String partials, String variable, String classTag) {
       String plan = polarLib.polar_build_filter_plan(ptr, types, partials, variable, classTag);
       processMessages();
-      return checkResult(plan);
+      plan = checkResult(plan);
+      JSONObject json = (JSONObject) new JSONTokener(plan).nextValue();
+      return new FilterPlan(json, classTag);
     }
 
     protected Query newQueryFromStr(String queryStr) throws Exceptions.OsoException {

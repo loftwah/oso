@@ -1,5 +1,8 @@
 package com.osohq.oso;
 
+import java.util.Map;
+import java.util.HashMap;
+
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,10 +21,11 @@ public class HostTest {
   @Test
   public void isSubclass() {
 
+    Map<String, Host.TypeSpec> empty = new HashMap();
     Host host = new Host(null);
-    host.cacheClass(User.class, "User");
-    host.cacheClass(UserSubclass.class, "UserSubclass");
-    host.cacheClass(NotSubclass.class, "NotSubclass");
+    host.cacheClass(User.class, "User", empty);
+    host.cacheClass(UserSubclass.class, "UserSubclass", empty);
+    host.cacheClass(NotSubclass.class, "NotSubclass", empty);
 
     assertTrue(host.isSubclass("UserSubclass", "User"));
     assertTrue(host.isSubclass("UserSubclass", "UserSubclass"));

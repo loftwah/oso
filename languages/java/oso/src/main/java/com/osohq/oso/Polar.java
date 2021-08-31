@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class Polar {
   private Ffi.Polar ffiPolar;
@@ -233,6 +234,34 @@ public class Polar {
     new Polar().repl(args);
   }
 
+  public List<Object> authorizedResources(Object actor, String action, Class<?> cls) {
+    Variable resource = new Variable("resource");
+    List<Object> args =
+      List.of(resource, new Pattern(cls.getName(), new HashMap<String, Object>()));
+    args = List.of(new Expression(Operator.Isa, args));
+    Expression typeConstraint = new Expression(Operator.And, args);
+    Map<String, Object> bindings = Map.of("resource", typeConstraint);
+    Query q = queryRule("allow", bindings, actor, action, resource);
+    JSONArray out = new JSONArray();
+
+    for (HashMap<String, Object> res; (res = q.nextElement()) != null;)
+      for (String key : res.keySet()) {
+        JSONObject outer = new JSONObject(), inner = new JSONObject();
+        inner.put(key, host.toPolarTerm(res.get(key)));
+        outer.put("bindings", inner);
+        out.put(outer);
+      }
+
+    FilterPlan filterPlan =
+      ffiPolar.buildFilterPlan(
+        host.serializeTypes(),
+        out.toString(),
+        "resource",
+        cls.getName());
+
+    return null;
+  }
+
   /** Register a Java class with Polar. */
   public void registerClass(Class<?> cls)
       throws Exceptions.DuplicateClassAliasError, Exceptions.OsoException {
@@ -242,10 +271,10 @@ public class Polar {
   /** Register a Java class with Polar using an alias. */
   public void registerClass(Class<?> cls, String name)
       throws Exceptions.DuplicateClassAliasError, Exceptions.OsoException {
-    registerClass(cls, name, new HashMap<String, Class<?>>());
+    registerClass(cls, name, new HashMap<String, Host.TypeSpec>());
   }
 
-  public void registerClass(Class<?> cls, String name, Map<String, Class<?>> fields) {
+  public void registerClass(Class<?> cls, String name, Map<String, Host.TypeSpec> fields) {
     host.cacheClass(cls, name, fields);
     registerConstant(cls, name);
   }
