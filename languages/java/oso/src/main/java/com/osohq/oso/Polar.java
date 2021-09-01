@@ -15,9 +15,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
-import java.util.function.Function;
 import java.util.function.BiFunction;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -85,17 +85,14 @@ public class Polar {
   }
 
   public void configureDataFiltering(
-    Function<List<FilterPlan.Constraint>, Object> build,
-    Function<Object, List<Object>> exec,
-    BiFunction<Object, Object, Object> combine
-  ) {
+      Function<List<FilterPlan.Constraint>, Object> build,
+      Function<Object, List<Object>> exec,
+      BiFunction<Object, Object, Object> combine) {
     host.configureDataFiltering(build, exec, combine);
   }
 
   public void configureDataFiltering(
-    Function<Object, List<Object>> exec,
-    BiFunction<Object, Object, Object> combine
-  ) {
+      Function<Object, List<Object>> exec, BiFunction<Object, Object, Object> combine) {
     host.configureDataFiltering(host.buildQuery, exec, combine);
   }
 
@@ -191,7 +188,14 @@ public class Polar {
    */
   public Query queryRule(String rule, Map<String, Object> bindings, Object... args)
       throws Exceptions.OsoException {
+    return queryRuleX(rule, bindings, false, args);
+  }
+
+  private Query queryRuleX(
+      String rule, Map<String, Object> bindings, boolean acceptExpression, Object... args)
+      throws Exceptions.OsoException {
     Host new_host = host.clone();
+    new_host.setAcceptExpression(acceptExpression);
     String pred = new_host.toPolarTerm(new Predicate(rule, Arrays.asList(args))).toString();
     return new Query(ffiPolar.newQueryFromTerm(pred), new_host, bindings);
   }
@@ -257,6 +261,7 @@ public class Polar {
 
   public List<Object> authorizedResources(Object actor, String action, Class<?> cls) {
     Object query = authorizedQuery(actor, action, cls);
+    if (query == null) return List.of();
     Host.UserType type = host.types.get(cls);
     return type.execQuery.apply(query);
   }
@@ -264,29 +269,26 @@ public class Polar {
   public Object authorizedQuery(Object actor, String action, Class<?> cls) {
     Variable resource = new Variable("resource");
     List<Object> args =
-      List.of(resource, new Pattern(host.types.get(cls).name, new HashMap<String, Object>()));
+        List.of(resource, new Pattern(host.types.get(cls).name, new HashMap<String, Object>()));
     args = List.of(new Expression(Operator.Isa, args));
     Expression typeConstraint = new Expression(Operator.And, args);
     Map<String, Object> bindings = Map.of("resource", typeConstraint);
-    Query q = queryRule("allow", bindings, actor, action, resource);
+    Query q = queryRuleX("allow", bindings, true, actor, action, resource);
     JSONArray out = new JSONArray();
 
-    for (HashMap<String, Object> res; (res = q.nextElement()) != null;)
+    for (HashMap<String, Object> res; (res = q.nextElement()) != null; ) {
       for (String key : res.keySet()) {
         JSONObject outer = new JSONObject(), inner = new JSONObject();
         inner.put(key, host.toPolarTerm(res.get(key)));
         outer.put("bindings", inner);
         out.put(outer);
       }
+    }
 
-    return
-      ffiPolar.buildFilterPlan(
-        this.host,
-        host.serializeTypes(),
-        out.toString(),
-        "resource",
-        host.types.get(cls).name
-      ).buildQuery();
+    return ffiPolar
+        .buildFilterPlan(
+            this.host, host.serializeTypes(), out.toString(), "resource", host.types.get(cls).name)
+        .buildQuery();
   }
 
   /** Register a Java class with Polar. */

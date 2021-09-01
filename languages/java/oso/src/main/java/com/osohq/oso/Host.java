@@ -6,11 +6,11 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.DoubleStream;
 import java.util.stream.IntStream;
-import java.util.function.Function;
-import java.util.function.BiFunction;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -36,10 +36,9 @@ public class Host implements Cloneable {
   }
 
   public void configureDataFiltering(
-    Function<List<FilterPlan.Constraint>, Object> build,
-    Function<Object, List<Object>> exec,
-    BiFunction<Object, Object, Object> combine
-  ) {
+      Function<List<FilterPlan.Constraint>, Object> build,
+      Function<Object, List<Object>> exec,
+      BiFunction<Object, Object, Object> combine) {
     buildQuery = build;
     execQuery = exec;
     combineQuery = combine;
@@ -59,8 +58,7 @@ public class Host implements Cloneable {
     for (UserType typ : types.values().stream().collect(Collectors.toSet())) {
       JSONObject jsonFields = new JSONObject();
       Map<String, TypeSpec> fields = typ.fields;
-      for (String key : fields.keySet())
-        jsonFields.put(key, fields.get(key).serialize());
+      for (String key : fields.keySet()) jsonFields.put(key, fields.get(key).serialize());
       out.put(typ.name, jsonFields);
     }
     return out.toString();
@@ -85,7 +83,8 @@ public class Host implements Cloneable {
    * @param name The name used to reference the class from within Polar.
    * @throws Exceptions.DuplicateClassAliasError If the name is already registered.
    */
-  public UserType cacheClass(Class<?> cls, String name, Map<String, TypeSpec> fields) throws Exceptions.DuplicateClassAliasError {
+  public UserType cacheClass(Class<?> cls, String name, Map<String, TypeSpec> fields)
+      throws Exceptions.DuplicateClassAliasError {
     if (types.containsKey(name)) {
       throw new Exceptions.DuplicateClassAliasError(
           name, types.get(name).cls.getName(), cls.getName());
@@ -431,30 +430,35 @@ public class Host implements Cloneable {
     return resArray;
   }
 
-  enum RelationKind { PARENT, CHILDREN }
+  enum RelationKind {
+    PARENT,
+    CHILDREN
+  }
+
   interface TypeSpec {
-    public String serialize();
+    public JSONObject serialize();
   }
 
   public static class TypeRelation implements TypeSpec {
     public RelationKind kind;
     public String otherClassName, myField, otherField;
 
-    public TypeRelation(RelationKind kind, String otherClassName, String myField, String otherField) {
+    public TypeRelation(
+        RelationKind kind, String otherClassName, String myField, String otherField) {
       this.kind = kind;
       this.otherClassName = otherClassName;
       this.myField = myField;
       this.otherField = otherField;
     }
 
-    public String serialize() {
+    public JSONObject serialize() {
       JSONObject outer = new JSONObject(), inner = new JSONObject();
       inner.put("kind", serializeRelationKind());
       inner.put("other_class_tag", otherClassName);
       inner.put("my_field", myField);
       inner.put("other_field", otherField);
       outer.put("Relationship", inner);
-      return outer.toString();
+      return outer;
     }
 
     private String serializeRelationKind() {
@@ -462,8 +466,10 @@ public class Host implements Cloneable {
       switch (kind) {
         case PARENT:
           out = "parent";
+          break;
         case CHILDREN:
           out = "children";
+          break;
       }
       return out;
     }
@@ -478,13 +484,12 @@ public class Host implements Cloneable {
     public BiFunction<Object, Object, Object> combineQuery;
 
     public UserType(
-      String name,
-      Class<?> cls,
-      Map<String, TypeSpec> fields,
-      Function<List<FilterPlan.Constraint>, Object> buildQuery,
-      Function<Object, List<Object>> execQuery,
-      BiFunction<Object, Object, Object> combineQuery
-    ) {
+        String name,
+        Class<?> cls,
+        Map<String, TypeSpec> fields,
+        Function<List<FilterPlan.Constraint>, Object> buildQuery,
+        Function<Object, List<Object>> execQuery,
+        BiFunction<Object, Object, Object> combineQuery) {
       this.name = name;
       this.cls = cls;
       this.fields = fields;
@@ -493,11 +498,11 @@ public class Host implements Cloneable {
       this.combineQuery = combineQuery;
     }
 
-    public String serialize() {
+    public JSONObject serialize() {
       JSONObject outer = new JSONObject(), inner = new JSONObject();
       inner.put("class_tag", name);
       outer.put("Base", inner);
-      return outer.toString();
+      return outer;
     }
   }
 }

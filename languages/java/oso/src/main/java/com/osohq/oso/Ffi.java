@@ -54,7 +54,8 @@ public class Ffi {
       return checkResult(result);
     }
 
-    protected FilterPlan buildFilterPlan(Host host, String types, String partials, String variable, String classTag) {
+    protected FilterPlan buildFilterPlan(
+        Host host, String types, String partials, String variable, String classTag) {
       String plan = polarLib.polar_build_filter_plan(ptr, types, partials, variable, classTag);
       processMessages();
       plan = checkResult(plan);
@@ -260,7 +261,8 @@ public class Ffi {
 
     int polar_validate_roles_config(Pointer polar_ptr, String results);
 
-    String polar_build_filter_plan(Pointer polar_ptr, String types, String partials, String variable, String class_tag);
+    String polar_build_filter_plan(
+        Pointer polar_ptr, String types, String partials, String variable, String class_tag);
   }
 
   protected Ffi() {

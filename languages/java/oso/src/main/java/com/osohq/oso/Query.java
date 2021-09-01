@@ -88,6 +88,34 @@ public class Query implements Enumeration<HashMap<String, Object>> {
     return results;
   }
 
+  private void handleRelation(Object instance, Host.TypeRelation rel, long callId) {
+    Host.UserType typ = host.types.get(rel.otherClassName);
+    try {
+      instance = instance.getClass().getField(rel.myField).get(instance);
+    } catch (Exception e) {
+      throw new Exceptions.InvalidCallError("Caused by: " + e.toString());
+    }
+    FilterPlan.Constraint constraint =
+        new FilterPlan.Constraint(
+            this.host,
+            FilterPlan.ConstraintKind.EQ,
+            rel.otherField,
+            new FilterPlan.Constraint.Term(instance));
+
+    String out;
+    List<Object> res = typ.execQuery.apply(typ.buildQuery.apply(List.of(constraint)));
+
+    if (rel.kind == Host.RelationKind.PARENT) {
+      if (res.size() != 1)
+        throw new Exceptions.InvalidCallError(
+            "wrong number of parents: " + String.valueOf(res.size()));
+      out = host.toPolarTerm(res.get(0)).toString();
+    } else {
+      out = host.toPolarTerm(res).toString();
+    }
+    ffiQuery.callResult(callId, out);
+  }
+
   /** Helper for `ExternalCall` query events */
   private void handleCall(
       String attrName, Optional<JSONArray> jArgs, JSONObject polarInstance, long callId)
@@ -114,6 +142,12 @@ public class Query implements Enumeration<HashMap<String, Object>> {
           }
           result = method.invoke(instance, args.get().toArray());
         } else {
+          Object rel = host.types.get(cls).fields.get(attrName);
+          if (rel instanceof Host.TypeRelation) {
+            handleRelation(instance, (Host.TypeRelation) rel, callId);
+            return;
+          }
+
           // Look for a field with the given name.
           try {
             Field field = cls.getField(attrName);
