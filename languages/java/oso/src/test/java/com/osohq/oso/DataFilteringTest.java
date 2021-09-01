@@ -49,7 +49,7 @@ public class DataFilteringTest {
     }
   }
 
-  static final String magicPath = "src/test/java/com/osohq/oso/magic_policy.polar";
+  static final String magicPath = "src/test/resources/magic_policy.polar";
 
   static final Wizard
       babaYaga =
