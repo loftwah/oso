@@ -4,7 +4,7 @@ import 'reflect-metadata';
 import { Entity, PrimaryColumn, Column, createConnection } from 'typeorm';
 
 @Entity()
-export class Bar {
+class Bar {
   @PrimaryColumn()
   id!: string;
 
@@ -16,7 +16,7 @@ export class Bar {
 }
 
 @Entity()
-export class Foo {
+class Foo {
   @PrimaryColumn()
   id!: string;
 
@@ -28,28 +28,32 @@ export class Foo {
 }
 
 @Entity()
-export class Num {
+class Num {
   @PrimaryColumn()
   fooId!: string;
   @PrimaryColumn()
   number!: number;
 }
 
-test('data filtering', async () => {
+let i = 0;
+const gensym = (tag?: any) => `_${tag}_${i++}`;
+
+async function fixtures() {
   const connection = await createConnection({
     type: 'sqlite',
     database: `:memory:`,
     entities: [Foo, Bar, Num],
     synchronize: true,
     logging: false,
+    name: gensym(),
   });
 
-  let bars = connection.getRepository(Bar);
-  let foos = connection.getRepository(Foo);
-  let nums = connection.getRepository(Num);
+  const bars = connection.getRepository(Bar);
+  const foos = connection.getRepository(Foo);
+  const nums = connection.getRepository(Num);
 
   async function mkBar(id: string, cool: boolean, stillCool: boolean) {
-    let bar = new Bar();
+    const bar = new Bar();
     bar.id = id;
     bar.isCool = cool;
     bar.isStillCool = stillCool;
@@ -58,7 +62,7 @@ test('data filtering', async () => {
   }
 
   async function mkFoo(id: string, barId: string, fooey: boolean) {
-    let foo = new Foo();
+    const foo = new Foo();
     foo.id = id;
     foo.barId = barId;
     foo.isFooey = fooey;
@@ -67,78 +71,66 @@ test('data filtering', async () => {
   }
 
   async function mkNum(number: number, fooId: string) {
-    let num = new Num();
+    const num = new Num();
     num.fooId = fooId;
     num.number = number;
     await nums.save(num);
     return num;
   }
 
-  let helloBar = await mkBar('hello', true, true);
-  let byeBar = await mkBar('goodbye', true, false);
+  const helloBar = await mkBar('hello', true, true);
+  const byeBar = await mkBar('goodbye', true, false);
 
-  let aFoo = await mkFoo('one', 'hello', false);
-  let anotherFoo = await mkFoo('another', 'hello', true);
-  let thirdFoo = await mkFoo('next', 'goodbye', true);
+  const aFoo = await mkFoo('one', 'hello', false);
+  const anotherFoo = await mkFoo('another', 'hello', true);
+  const thirdFoo = await mkFoo('next', 'goodbye', true);
 
-  await mkNum(0, 'one');
-  await mkNum(1, 'one');
-  await mkNum(2, 'one');
-
-  await mkNum(0, 'another');
-  await mkNum(1, 'another');
-
-  await mkNum(0, 'next');
+  for (let i of [0, 1, 2]) await mkNum(i, 'one');
+  for (let i of [0, 1]) await mkNum(i, 'another');
+  for (let i of [0]) await mkNum(i, 'next');
 
   const oso = new Oso();
 
-  function fromRepo(repo: any, name: string, constraints: any) {
-    function constrainQuery(query: any, c: any) {
+  const fromRepo = (repo: any, name: string) => {
+    const constrain = (query: any, c: any) => {
       let clause,
         rhs,
+        sym = gensym(c.field),
         param: any = {};
 
       if (c.value instanceof Field) {
         rhs = `${name}.${c.value.field}`;
       } else {
-        rhs = c.kind == 'In' ? `(:...${c.field})` : `:${c.field}`;
-        param[c.field] = c.value;
+        rhs = c.kind == 'In' ? `(:...${sym})` : `:${sym}`;
+        param[sym] = c.value;
       }
 
       if (c.kind === 'Eq') clause = `${name}.${c.field} = ${rhs}`;
       else if (c.kind === 'Neq') clause = `${name}.${c.field} <> ${rhs}`;
       else if (c.kind === 'In') clause = `${name}.${c.field} IN ${rhs}`;
-      else throw new Error(`Unknown constraint kind:${c.kind}`);
+      else throw new Error(`Unknown constraint kind: ${c.kind}`);
 
       return query.andWhere(clause, param);
-    }
-
-    return constraints.reduce(constrainQuery, repo.createQueryBuilder(name));
-  }
-
-  function getBars(constraints: any) {
-    return fromRepo(bars, 'bar', constraints);
-  }
-
-  function getFoos(constraints: any) {
-    return fromRepo(foos, 'foo', constraints);
-  }
-
-  function getNums(constraints: any) {
-    return fromRepo(nums, 'num', constraints);
-  }
-
-  function execQuery(q: any) {
-    return q.getMany();
-  }
-
-  function combineQuery(a: any, b: any) {
-    return {
-      getMany: async () => {
-        return (await a.getMany()).concat(await b.getMany());
-      },
     };
-  }
+
+    return (constraints: any) =>
+      constraints.reduce(constrain, repo.createQueryBuilder(name));
+  };
+
+  const execQuery = (q: any) => q.getMany();
+  const combineQuery = (a: any, b: any) => {
+    // this is kind of bad but typeorm doesn't give you a lot of tools
+    // for working with queries :(
+    const whereClause = (sql: string) => /WHERE (.*)$/.exec(sql)![1];
+    a = a.orWhere(whereClause(b.getQuery()), b.getParameters());
+    return a.where(`(${whereClause(a.getQuery())})`, a.getParameters());
+  };
+
+  // set global exec/combine query functions
+  oso.configureDataFiltering({
+    execQuery: execQuery,
+    combineQuery: combineQuery,
+  });
 
   const barType = new Map();
   barType.set('id', String);
@@ -146,11 +138,8 @@ test('data filtering', async () => {
   barType.set('isStillCool', Boolean);
   barType.set('foos', new Relationship('children', 'Foo', 'id', 'barId'));
   oso.registerClass(Bar, {
-    name: 'Bar',
     types: barType,
-    buildQuery: getBars,
-    execQuery: execQuery,
-    combineQuery: combineQuery,
+    buildQuery: fromRepo(bars, 'bar'),
   });
 
   const fooType = new Map();
@@ -160,11 +149,8 @@ test('data filtering', async () => {
   fooType.set('bar', new Relationship('parent', 'Bar', 'barId', 'id'));
   fooType.set('numbers', new Relationship('children', 'Num', 'id', 'fooId'));
   oso.registerClass(Foo, {
-    name: 'Foo',
     types: fooType,
-    buildQuery: getFoos,
-    execQuery: execQuery,
-    combineQuery: combineQuery,
+    buildQuery: fromRepo(foos, 'foo'),
   });
 
   const numType = new Map();
@@ -172,17 +158,9 @@ test('data filtering', async () => {
   numType.set('fooId', String);
   numType.set('foo', new Relationship('parent', 'Foo', 'fooId', 'id'));
   oso.registerClass(Num, {
-    name: 'Num',
     types: numType,
-    buildQuery: getNums,
-    execQuery: execQuery,
-    combineQuery: combineQuery,
+    buildQuery: fromRepo(nums, 'num'),
   });
-
-  const expectSameResults = (a: any[], b: any[]) => {
-    expect(a).toEqual(expect.arrayContaining(b));
-    expect(b).toEqual(expect.arrayContaining(a));
-  };
 
   const checkAuthz = async (
     actor: any,
@@ -190,74 +168,108 @@ test('data filtering', async () => {
     resource: any,
     expected: any[]
   ) => {
-    for (let x in expected)
-      expect(await oso.isAllowed(actor, action, expected[x])).toBe(true);
-    expectSameResults(
-      await oso.getAllowedResources(actor, action, resource),
-      expected
-    );
+    for (let x of expected)
+      expect(await oso.isAllowed(actor, action, x)).toBe(true);
+    const actual = await oso.authorizedResources(actor, action, resource);
+
+    expect(actual).toHaveLength(expected.length);
+    expect(actual).toEqual(expect.arrayContaining(expected));
   };
 
-  oso.loadStr(`
-        allow("steve", "get", resource: Foo) if
-            resource.bar = bar and
-            bar.isCool = true and
-            resource.isFooey = true;
-    `);
-  await checkAuthz('steve', 'get', Foo, [anotherFoo, thirdFoo]);
+  return {
+    oso: oso,
+    aFoo: aFoo,
+    anotherFoo: anotherFoo,
+    thirdFoo: thirdFoo,
+    helloBar: helloBar,
+    byeBar: byeBar,
+    checkAuthz: checkAuthz,
+  };
+}
 
-  oso.loadStr(`
-        allow("steve", "patch", foo: Foo) if
-          foo in foo.bar.foos;
-    `);
-  await checkAuthz('steve', 'patch', Foo, [aFoo, anotherFoo, thirdFoo]);
+describe('Data filtering using typeorm/sqlite', () => {
+  test('relations and operators', async () => {
+    const { oso, checkAuthz, aFoo, anotherFoo, thirdFoo } = await fixtures();
 
-  oso.loadStr(`
-        allow(num: Integer, "count", foo: Foo) if
-          rec in foo.numbers and
-          rec.number = num;
-        allow("gwen", "eat", foo: Foo) if
-          rec in foo.numbers and
-          rec.number in [1, 2];
-  `);
-  await checkAuthz(0, 'count', Foo, [aFoo, anotherFoo, thirdFoo]);
-  await checkAuthz(1, 'count', Foo, [aFoo, anotherFoo]);
-  await checkAuthz(2, 'count', Foo, [aFoo]);
-  await checkAuthz('gwen', 'eat', Foo, [aFoo, anotherFoo]);
+    oso.loadStr(`
+      allow("steve", "get", resource: Foo) if
+          resource.bar = bar and
+          bar.isCool = true and
+          resource.isFooey = true;
+      allow("steve", "patch", foo: Foo) if
+        foo in foo.bar.foos;
+      allow(num: Integer, "count", foo: Foo) if
+        rec in foo.numbers and
+        rec.number = num;`);
 
-  oso.loadStr(`
-    allow("gwen", "get", bar: Bar) if
-      bar.isCool != bar.isStillCool;
-  `);
-  await checkAuthz('gwen', 'get', Bar, [byeBar]);
+    await checkAuthz('steve', 'get', Foo, [anotherFoo, thirdFoo]);
+    await checkAuthz('steve', 'patch', Foo, [aFoo, anotherFoo, thirdFoo]);
 
-  oso.clearRules();
-  oso.loadStr(`
-        resource(_type: Bar, "bar", actions, roles) if
-            actions = ["get"] and
-            roles = {
-                owner: {
-                    permissions: ["get"],
-                    implies: ["foo:reader"]
-                }
-            };
+    await checkAuthz(0, 'count', Foo, [aFoo, anotherFoo, thirdFoo]);
+    await checkAuthz(1, 'count', Foo, [aFoo, anotherFoo]);
+    await checkAuthz(2, 'count', Foo, [aFoo]);
+  });
 
-        resource(_type: Foo, "foo", actions, roles) if
-            actions = ["read"] and
-            roles = {
-                reader: {
-                    permissions: ["read"]
-                }
-            };
+  test('an empty result', async () => {
+    const { oso } = await fixtures();
+    oso.loadStr('allow("gwen", "put", _: Foo);');
+    expect(await oso.authorizedResources('gwen', 'delete', Foo)).toEqual([]);
+  });
 
-        parent_child(parent_bar: Bar, foo: Foo) if
-            foo.bar = parent_bar;
+  test('not equals', async () => {
+    const { oso, checkAuthz, byeBar } = await fixtures();
+    oso.loadStr(`
+      allow("gwen", "get", bar: Bar) if
+        bar.isCool != bar.isStillCool;`);
+    await checkAuthz('gwen', 'get', Bar, [byeBar]);
+  });
 
-        actor_has_role_for_resource("steve", "owner", bar: Bar) if bar.id = "hello";
+  test('returning, modifying and executing a query', async () => {
+    const { oso, checkAuthz, aFoo, anotherFoo } = await fixtures();
+    oso.loadStr(`
+      allow("gwen", "put", foo: Foo) if
+        rec in foo.numbers and
+        rec.number in [1, 2];`);
 
-        allow(actor, action, resource) if role_allows(actor, action, resource);
-    `);
-  oso.enableRoles();
-  await checkAuthz('steve', 'get', Bar, [helloBar]);
-  await checkAuthz('steve', 'read', Foo, [aFoo, anotherFoo]);
+    const query = await oso.authorizedQuery('gwen', 'put', Foo);
+
+    let result = await query.getMany();
+    expect(result).toHaveLength(2);
+    expect(result).toEqual(expect.arrayContaining([aFoo, anotherFoo]));
+
+    result = await query.andWhere("id = 'one'").getMany();
+    expect(result).toHaveLength(1);
+    expect(result).toEqual(expect.arrayContaining([aFoo]));
+  });
+
+  test('a roles policy', async () => {
+    const { oso, checkAuthz, aFoo, anotherFoo, helloBar } = await fixtures();
+    oso.loadStr(`
+      resource(_: Bar, "bar", actions, roles) if
+        actions = ["get"] and
+        roles = {
+            owner: {
+                permissions: actions,
+                implies: ["foo:reader"]
+            }
+        };
+
+      resource(_: Foo, "foo", actions, roles) if
+        actions = ["read"] and
+        roles = {
+            reader: {
+                permissions: actions
+            }
+        };
+
+      parent_child(bar: Bar, _: Foo{bar: bar});
+
+      actor_has_role_for_resource("steve", "owner", _: Bar{id: "hello"});
+
+      allow(actor, action, resource) if
+        role_allows(actor, action, resource);`);
+    oso.enableRoles();
+    await checkAuthz('steve', 'get', Bar, [helloBar]);
+    await checkAuthz('steve', 'read', Foo, [aFoo, anotherFoo]);
+  });
 });
