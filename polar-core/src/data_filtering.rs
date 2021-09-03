@@ -73,6 +73,12 @@ pub struct ResultSet {
     result_id: Id,
 }
 
+struct ResultSetBuilder<'a> {
+    result_set: ResultSet,
+    types: &'a Types,
+    vars: &'a Vars,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
 pub struct FilterPlan {
     result_sets: Vec<ResultSet>,
@@ -547,20 +553,26 @@ impl From<(Term, &str)> for ResultSet {
 
 impl ResultSet {
     fn build(types: &Types, vars: &Vars, this_type: &str) -> PolarResult<Self> {
-        let mut result_set = ResultSet {
+        let result_set = ResultSet {
             requests: HashMap::new(),
             resolve_order: vec![],
             result_id: vars.this_id,
         };
-        let mut seen = HashSet::new();
-        result_set.constrain_var(types, vars, vars.this_id, this_type, &mut seen)?;
-        Ok(result_set)
-    }
+        let mut result_set_builder = ResultSetBuilder {
+            result_set,
+            types,
+            vars,
+        };
 
+        let mut seen = HashSet::new();
+        result_set_builder.constrain_var(vars.this_id, this_type, &mut seen)?;
+        Ok(result_set_builder.result_set)
+    }
+}
+
+impl<'a> ResultSetBuilder<'a> {
     fn constrain_var(
         &mut self,
-        types: &Types,
-        vars: &Vars,
         var_id: Id,
         var_type: &str,
         seen: &mut HashSet<Id>,
@@ -569,30 +581,27 @@ impl ResultSet {
             return Ok(());
         }
 
-        let mut request = self
-            .requests
-            .remove(&var_id)
-            .unwrap_or_else(|| FetchRequest {
-                class_tag: var_type.to_string(),
-                constraints: vec![],
-            });
+        let mut request =
+            self.result_set
+                .requests
+                .remove(&var_id)
+                .unwrap_or_else(|| FetchRequest {
+                    class_tag: var_type.to_string(),
+                    constraints: vec![],
+                });
 
-        self.constrain_fields(types, vars, var_id, var_type, seen, &mut request)?;
-        self.constrain_in_vars(types, vars, var_id, var_type, seen, &mut request)?;
-        self.constrain_eq_vars(vars, var_id, &mut request)?;
+        self.constrain_fields(var_id, var_type, seen, &mut request)?;
+        self.constrain_in_vars(var_id, var_type, seen, &mut request)?;
+        self.constrain_eq_vars(var_id, &mut request)?;
 
-        self.requests.insert(var_id, request);
-        self.resolve_order.push(var_id);
+        self.result_set.requests.insert(var_id, request);
+        self.result_set.resolve_order.push(var_id);
         Ok(())
     }
 
-    fn constrain_eq_vars(
-        &mut self,
-        vars: &Vars,
-        var_id: Id,
-        request: &mut FetchRequest,
-    ) -> PolarResult<()> {
-        vars.uncycles
+    fn constrain_eq_vars(&mut self, var_id: Id, request: &mut FetchRequest) -> PolarResult<()> {
+        self.vars
+            .uncycles
             .iter()
             .filter_map(|(a, b)| {
                 (*a == var_id)
@@ -610,7 +619,8 @@ impl ResultSet {
                 })
             });
 
-        vars.neq_values
+        self.vars
+            .neq_values
             .iter()
             .filter_map(|(k, v)| (k == &var_id).then(|| v))
             .for_each(|v| {
@@ -621,7 +631,7 @@ impl ResultSet {
                 });
             });
 
-        if let Some(l) = vars.eq_values.get(&var_id) {
+        if let Some(l) = self.vars.eq_values.get(&var_id) {
             request.constraints.push(Constraint {
                 kind: ConstraintKind::Eq,
                 field: None,
@@ -633,8 +643,6 @@ impl ResultSet {
 
     fn constrain_in_vars(
         &mut self,
-        types: &Types,
-        vars: &Vars,
         var_id: Id,
         var_type: &str,
         seen: &mut HashSet<Id>,
@@ -644,14 +652,15 @@ impl ResultSet {
         // Add their constraints to this one.
         // @NOTE(steve): I think this is right, but I'm not totally sure.
         // This might assume that the current var is a relationship of kind "children".
-        for l in vars
+        for l in self
+            .vars
             .in_relationships
             .iter()
             .filter_map(|(l, r)| (*r == var_id).then(|| l))
         {
-            self.constrain_var(types, vars, *l, var_type, seen)?;
-            if let Some(in_result_set) = self.requests.remove(l) {
-                let last = self.resolve_order.pop();
+            self.constrain_var(*l, var_type, seen)?;
+            if let Some(in_result_set) = self.result_set.requests.remove(l) {
+                let last = self.result_set.resolve_order.pop();
                 if last != Some(*l) {
                     let msg = format!("Invalid resolve order: wanted {}, got {:?}", l, last);
                     return Err(OperationalError::InvalidState(msg).into());
@@ -660,7 +669,7 @@ impl ResultSet {
             }
         }
 
-        if let Some(vs) = vars.contained_values.get(&var_id) {
+        if let Some(vs) = self.vars.contained_values.get(&var_id) {
             for l in vs {
                 request.constraints.push(Constraint {
                     kind: ConstraintKind::Eq,
@@ -675,8 +684,6 @@ impl ResultSet {
 
     fn constrain_relation(
         &mut self,
-        types: &Types,
-        vars: &Vars,
         child: Id,
         seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
@@ -684,17 +691,17 @@ impl ResultSet {
         my_field: &str,
         other_field: &str,
     ) -> PolarResult<()> {
-        self.constrain_var(types, vars, child, other_class_tag, seen)?;
+        self.constrain_var(child, other_class_tag, seen)?;
 
         // If the constrained child var doesn't have any constraints on it, we don't need to
         // constrain this var. Otherwise we're just saying field foo in all Foos which
         // would fetch all Foos and not be good.
-        if let Some(child_result) = self.requests.remove(&child) {
+        if let Some(child_result) = self.result_set.requests.remove(&child) {
             if child_result.constraints.is_empty() {
                 // Remove the id from the resolve_order too.
-                self.resolve_order.pop();
+                self.result_set.resolve_order.pop();
             } else {
-                self.requests.insert(child, child_result);
+                self.result_set.requests.insert(child, child_result);
                 request.constraints.push(Constraint {
                     kind: ConstraintKind::In,
                     field: Some(my_field.to_string()),
@@ -710,8 +717,6 @@ impl ResultSet {
 
     fn constrain_field(
         &mut self,
-        types: &Types,
-        vars: &Vars,
         var_id: Id,
         seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
@@ -722,7 +727,7 @@ impl ResultSet {
 
         // Non relationship or unknown type info.
         let mut contributed_constraints = false;
-        if let Some(value) = vars.eq_values.get(&child) {
+        if let Some(value) = self.vars.eq_values.get(&child) {
             request.constraints.push(Constraint {
                 kind: ConstraintKind::Eq,
                 field: Some(field.to_string()),
@@ -731,7 +736,8 @@ impl ResultSet {
             contributed_constraints = true;
         }
 
-        vars.neq_values
+        self.vars
+            .neq_values
             .iter()
             .filter_map(|(k, v)| (*k == child).then(|| v))
             .for_each(|v| {
@@ -743,7 +749,7 @@ impl ResultSet {
                 contributed_constraints = true;
             });
 
-        if let Some(values) = vars.contained_values.get(&child) {
+        if let Some(values) = self.vars.contained_values.get(&child) {
             for value in values {
                 request.constraints.push(Constraint {
                     kind: ConstraintKind::Contains,
@@ -754,7 +760,7 @@ impl ResultSet {
             contributed_constraints = true;
         }
 
-        for (p, f, c) in vars.field_relationships.iter() {
+        for (p, f, c) in self.vars.field_relationships.iter() {
             if *p != var_id || f != field {
                 let field = Some(field.to_string());
                 let value = if *p == var_id {
@@ -767,8 +773,8 @@ impl ResultSet {
                 };
 
                 if *c == child {
-                    if let Some(class_tag) = vars.type_of(p) {
-                        self.constrain_var(types, vars, *p, class_tag, seen)?;
+                    if let Some(class_tag) = self.vars.type_of(p) {
+                        self.constrain_var(*p, class_tag, seen)?;
                     }
                     request.constraints.push(Constraint {
                         kind: ConstraintKind::Eq,
@@ -778,9 +784,9 @@ impl ResultSet {
                     contributed_constraints = true;
                 } else {
                     let pair = canonical_pair(*c, child);
-                    if vars.uncycles.iter().any(|u| *u == pair) {
-                        if let Some(class_tag) = vars.type_of(p) {
-                            self.constrain_var(types, vars, *p, class_tag, seen)?;
+                    if self.vars.uncycles.iter().any(|u| *u == pair) {
+                        if let Some(class_tag) = self.vars.type_of(p) {
+                            self.constrain_var(*p, class_tag, seen)?;
                         }
                         request.constraints.push(Constraint {
                             kind: ConstraintKind::Neq,
@@ -803,8 +809,6 @@ impl ResultSet {
 
     fn constrain_fields(
         &mut self,
-        types: &Types,
-        vars: &Vars,
         var_id: Id,
         var_type: &str,
         seen: &mut HashSet<Id>,
@@ -814,17 +818,20 @@ impl ResultSet {
         fn get_type<'a>(types: &'a Types, tag1: &str, tag2: &str) -> Option<&'a Type> {
             types.get(tag1).and_then(|m| m.get(tag2))
         }
-        for (_, field, child) in vars.field_relationships.iter().filter(|p| p.0 == var_id) {
+        for (_, field, child) in self
+            .vars
+            .field_relationships
+            .iter()
+            .filter(|p| p.0 == var_id)
+        {
             if let Some(Type::Relationship {
                 other_class_tag,
                 my_field,
                 other_field,
                 ..
-            }) = get_type(types, var_type, field)
+            }) = get_type(self.types, var_type, field)
             {
                 self.constrain_relation(
-                    types,
-                    vars,
                     *child,
                     seen,
                     request,
@@ -833,7 +840,7 @@ impl ResultSet {
                     other_field,
                 )?;
             } else {
-                self.constrain_field(types, vars, var_id, seen, request, field, *child)?;
+                self.constrain_field(var_id, seen, request, field, *child)?;
             }
         }
         Ok(())
