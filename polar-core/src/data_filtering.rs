@@ -77,6 +77,7 @@ struct ResultSetBuilder<'a> {
     result_set: ResultSet,
     types: &'a Types,
     vars: &'a Vars,
+    seen: HashSet<Id>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Default)]
@@ -562,10 +563,10 @@ impl ResultSet {
             result_set,
             types,
             vars,
+            seen: HashSet::new(),
         };
 
-        let mut seen = HashSet::new();
-        result_set_builder.constrain_var(vars.this_id, this_type, &mut seen)?;
+        result_set_builder.constrain_var(vars.this_id, this_type)?;
         Ok(result_set_builder.result_set)
     }
 }
@@ -575,9 +576,8 @@ impl<'a> ResultSetBuilder<'a> {
         &mut self,
         var_id: Id,
         var_type: &str,
-        seen: &mut HashSet<Id>,
     ) -> PolarResult<()> {
-        if !seen.insert(var_id) {
+        if !self.seen.insert(var_id) {
             return Ok(());
         }
 
@@ -590,8 +590,8 @@ impl<'a> ResultSetBuilder<'a> {
                     constraints: vec![],
                 });
 
-        self.constrain_fields(var_id, var_type, seen, &mut request)?;
-        self.constrain_in_vars(var_id, var_type, seen, &mut request)?;
+        self.constrain_fields(var_id, var_type, &mut request)?;
+        self.constrain_in_vars(var_id, var_type, &mut request)?;
         self.constrain_eq_vars(var_id, &mut request)?;
 
         self.result_set.requests.insert(var_id, request);
@@ -645,7 +645,6 @@ impl<'a> ResultSetBuilder<'a> {
         &mut self,
         var_id: Id,
         var_type: &str,
-        seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
     ) -> PolarResult<()> {
         // Constrain any vars that are `in` this var.
@@ -658,7 +657,7 @@ impl<'a> ResultSetBuilder<'a> {
             .iter()
             .filter_map(|(l, r)| (*r == var_id).then(|| l))
         {
-            self.constrain_var(*l, var_type, seen)?;
+            self.constrain_var(*l, var_type)?;
             if let Some(in_result_set) = self.result_set.requests.remove(l) {
                 let last = self.result_set.resolve_order.pop();
                 if last != Some(*l) {
@@ -685,13 +684,12 @@ impl<'a> ResultSetBuilder<'a> {
     fn constrain_relation(
         &mut self,
         child: Id,
-        seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
         other_class_tag: &str,
         my_field: &str,
         other_field: &str,
     ) -> PolarResult<()> {
-        self.constrain_var(child, other_class_tag, seen)?;
+        self.constrain_var(child, other_class_tag)?;
 
         // If the constrained child var doesn't have any constraints on it, we don't need to
         // constrain this var. Otherwise we're just saying field foo in all Foos which
@@ -718,7 +716,6 @@ impl<'a> ResultSetBuilder<'a> {
     fn constrain_field(
         &mut self,
         var_id: Id,
-        seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
         field: &str,
         child: Id,
@@ -774,7 +771,7 @@ impl<'a> ResultSetBuilder<'a> {
 
                 if *c == child {
                     if let Some(class_tag) = self.vars.type_of(p) {
-                        self.constrain_var(*p, class_tag, seen)?;
+                        self.constrain_var(*p, class_tag)?;
                     }
                     request.constraints.push(Constraint {
                         kind: ConstraintKind::Eq,
@@ -786,7 +783,7 @@ impl<'a> ResultSetBuilder<'a> {
                     let pair = canonical_pair(*c, child);
                     if self.vars.uncycles.iter().any(|u| *u == pair) {
                         if let Some(class_tag) = self.vars.type_of(p) {
-                            self.constrain_var(*p, class_tag, seen)?;
+                            self.constrain_var(*p, class_tag)?;
                         }
                         request.constraints.push(Constraint {
                             kind: ConstraintKind::Neq,
@@ -811,7 +808,6 @@ impl<'a> ResultSetBuilder<'a> {
         &mut self,
         var_id: Id,
         var_type: &str,
-        seen: &mut HashSet<Id>,
         request: &mut FetchRequest,
     ) -> PolarResult<()> {
         // @TODO(steve): Probably should check the type against the var types. I think???
@@ -833,14 +829,13 @@ impl<'a> ResultSetBuilder<'a> {
             {
                 self.constrain_relation(
                     *child,
-                    seen,
                     request,
                     other_class_tag,
                     my_field,
                     other_field,
                 )?;
             } else {
-                self.constrain_field(var_id, seen, request, field, *child)?;
+                self.constrain_field(var_id, request, field, *child)?;
             }
         }
         Ok(())
