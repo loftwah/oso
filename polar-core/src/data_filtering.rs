@@ -327,7 +327,7 @@ impl VarInfo {
                 let var = self.symbolize(lhs);
                 self.types.push((var, i.tag.0.clone()))
             }
-            _ => return unimplemented(format!("Unsupported specializer: {}", rhs.to_polar())),
+            _ => return err_unimplemented(format!("Unsupported specializer: {}", rhs.to_polar())),
         }
         Ok(())
     }
@@ -343,7 +343,7 @@ impl VarInfo {
             // @NOTE(steve): Going with the same not yet supported message but if this is
             // coming through it's probably a bug in the simplifier.
             _ => {
-                return unimplemented(format!(
+                return err_unimplemented(format!(
                     "Unsupported unification: {} = {}",
                     left.to_polar(),
                     right.to_polar()
@@ -360,7 +360,7 @@ impl VarInfo {
                 self.neq_values.push((var, Term::from(val)))
             }
             _ => {
-                return unimplemented(format!(
+                return err_unimplemented(format!(
                     "Unsupported comparison: {} != {}",
                     left.to_polar(),
                     right.to_polar()
@@ -375,7 +375,7 @@ impl VarInfo {
             (Value::Variable(l), Value::Variable(r)) => self.in_relationships.push((l, r)),
             (val, Value::Variable(var)) => self.contained_values.push((Term::from(val), var)),
             _ => {
-                return unimplemented(format!(
+                return err_unimplemented(format!(
                     "Unsupported `in` check: {} in {}",
                     left.to_polar(),
                     right.to_polar()
@@ -398,7 +398,7 @@ impl VarInfo {
                 self.do_unify(&args[0], &args[1])
             }
 
-            x => unimplemented(format!(
+            x => err_unimplemented(format!(
                 "`{}` is not yet supported for data filtering.",
                 x.to_polar()
             )),
@@ -406,7 +406,11 @@ impl VarInfo {
     }
 }
 
-fn unimplemented<A>(msg: String) -> PolarResult<A> {
+fn err_invalid<A>(msg: String) -> PolarResult<A> {
+    Err(OperationalError::InvalidState(msg).into())
+}
+
+fn err_unimplemented<A>(msg: String) -> PolarResult<A> {
     Err(OperationalError::Unimplemented(msg).into())
 }
 
@@ -572,11 +576,7 @@ impl ResultSet {
 }
 
 impl<'a> ResultSetBuilder<'a> {
-    fn constrain_var(
-        &mut self,
-        var_id: Id,
-        var_type: &str,
-    ) -> PolarResult<()> {
+    fn constrain_var(&mut self, var_id: Id, var_type: &str) -> PolarResult<()> {
         if !self.seen.insert(var_id) {
             return Ok(());
         }
@@ -662,7 +662,7 @@ impl<'a> ResultSetBuilder<'a> {
                 let last = self.result_set.resolve_order.pop();
                 if last != Some(*l) {
                     let msg = format!("Invalid resolve order: wanted {}, got {:?}", l, last);
-                    return Err(OperationalError::InvalidState(msg).into());
+                    return err_invalid(msg);
                 }
                 request.constraints.extend(in_result_set.constraints);
             }
@@ -720,7 +720,7 @@ impl<'a> ResultSetBuilder<'a> {
         field: &str,
         child: Id,
     ) -> PolarResult<()> {
-        // FIXME(gw) this function is waaaay to big
+        // FIXME(gw) this function is too big!
 
         // Non relationship or unknown type info.
         let mut contributed_constraints = false;
@@ -800,7 +800,7 @@ impl<'a> ResultSetBuilder<'a> {
             Ok(())
         } else {
             let msg = format!("no constraint: {}.{}={}", var_id, field, child);
-            Err(OperationalError::InvalidState(msg).into())
+            err_invalid(msg)
         }
     }
 
@@ -827,13 +827,7 @@ impl<'a> ResultSetBuilder<'a> {
                 ..
             }) = get_type(self.types, var_type, field)
             {
-                self.constrain_relation(
-                    *child,
-                    request,
-                    other_class_tag,
-                    my_field,
-                    other_field,
-                )?;
+                self.constrain_relation(*child, request, other_class_tag, my_field, other_field)?;
             } else {
                 self.constrain_field(var_id, request, field, *child)?;
             }
@@ -938,6 +932,8 @@ where
 mod test {
     use super::*;
     use crate::bindings::Bindings;
+    type TestResult = PolarResult<()>;
+
     impl From<Bindings> for ResultEvent {
         fn from(bindings: Bindings) -> Self {
             ResultEvent { bindings }
@@ -956,26 +952,46 @@ mod test {
         b.is_empty()
     }
 
-    fn check_result_set(rset: ResultSet) {
-        fn has<A>(v: &[A], x: &A) -> bool
+    fn check_result_set(rset: ResultSet) -> TestResult {
+        fn index_of<A>(v: &[A], x: &A) -> Option<usize>
         where
             A: PartialEq<A>,
         {
-            v.iter().any(|y| *y == *x)
+            v.iter().enumerate().find_map(|(i, y)| (y == x).then(|| i))
         }
-        let order = rset.resolve_order;
+
+        let order = &rset.resolve_order;
         for (k, v) in rset.requests.iter() {
-            assert!(has(&order, k));
-            for c in v.constraints.iter() {
-                if let ConstraintValue::Ref(Ref { result_id: id, .. }) = c.value {
-                    assert!(has(&order, &id));
+            if let Some(j) = index_of(order, k) {
+                for c in v.constraints.iter() {
+                    if let ConstraintValue::Ref(Ref { result_id: id, .. }) = c.value {
+                        if let Some(i) = index_of(order, &id) {
+                            if i >= j {
+                                return err_invalid(format!(
+                                    "Request {} resolved after dependent request {} in {:?}",
+                                    id, k, rset
+                                ));
+                            }
+                        } else {
+                            return err_invalid(format!(
+                                "Request {} missing from resolve order {:?}",
+                                id, order
+                            ));
+                        }
+                    }
                 }
+            } else {
+                return err_invalid(format!(
+                    "Request {} missing from resolve order {:?}",
+                    k, order
+                ));
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn test_dot_plan() {
+    fn test_dot_plan() -> TestResult {
         let instance0: Term = ExternalInstance::from(0).into();
         let instance1: Term = ExternalInstance::from(1).into();
         let partial = opn!(
@@ -1010,8 +1026,9 @@ mod test {
         let plan = build_filter_plan(types, vec![bindings], "resource", "something")
             .expect("no filter plan!");
         for rs in plan.result_sets {
-            check_result_set(rs)
+            check_result_set(rs)?
         }
+        Ok(())
     }
 
     #[test]
