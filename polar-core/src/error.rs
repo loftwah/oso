@@ -33,7 +33,6 @@ pub enum ErrorKind {
     Runtime(RuntimeError),
     Operational(OperationalError),
     Parameter(ParameterError),
-    RolesValidation(RolesValidationError),
     Validation(ValidationError),
 }
 
@@ -58,7 +57,7 @@ impl PolarError {
                 | ParseError::ReservedWord { loc, .. }
                 | ParseError::DuplicateKey { loc, .. }
                 | ParseError::SingletonVariable { loc, .. }
-                | ParseError::ParseSugar { loc, .. } => {
+                | ParseError::ResourceBlock { loc, .. } => {
                     let (row, column) = crate::lexer::loc_to_pos(&source.src, *loc);
                     self.context.replace(ErrorContext {
                         source: source.clone(),
@@ -79,8 +78,8 @@ impl PolarError {
             _ => {}
         }
 
-        // Augment ParseSugar errors with relevant snippets of parsed Polar policy.
-        if let ErrorKind::Parse(ParseError::ParseSugar {
+        // Augment ResourceBlock errors with relevant snippets of parsed Polar policy.
+        if let ErrorKind::Parse(ParseError::ResourceBlock {
             ref mut msg,
             ref ranges,
             ..
@@ -109,7 +108,7 @@ impl PolarError {
     }
 
     pub fn unimplemented(msg: String) -> Self {
-        OperationalError::Unimplemented(msg).into()
+        OperationalError::Unimplemented {msg}.into()
     }
 }
 
@@ -149,15 +148,6 @@ impl From<ParameterError> for PolarError {
     }
 }
 
-impl From<RolesValidationError> for PolarError {
-    fn from(err: RolesValidationError) -> Self {
-        Self {
-            kind: ErrorKind::RolesValidation(err),
-            context: None,
-        }
-    }
-}
-
 impl From<ValidationError> for PolarError {
     fn from(err: ValidationError) -> Self {
         Self {
@@ -184,7 +174,6 @@ impl fmt::Display for PolarError {
             ErrorKind::Runtime(e) => write!(f, "{}", e)?,
             ErrorKind::Operational(e) => write!(f, "{}", e)?,
             ErrorKind::Parameter(e) => write!(f, "{}", e)?,
-            ErrorKind::RolesValidation(e) => write!(f, "{}", e)?,
             ErrorKind::Validation(e) => write!(f, "{}", e)?,
         }
         if let Some(ref context) = self.context {
@@ -244,7 +233,7 @@ pub enum ParseError {
     AmbiguousAndOr {
         msg: String,
     },
-    ParseSugar {
+    ResourceBlock {
         loc: usize,
         msg: String,
         /// Set of source ranges to augment the error message with relevant snippets of the parsed
@@ -313,7 +302,7 @@ impl fmt::Display for ParseError {
                     name, name
                 )
             }
-            Self::AmbiguousAndOr { msg, .. } | Self::ParseSugar { msg, .. } => {
+            Self::AmbiguousAndOr { msg, .. } | Self::ResourceBlock { msg, .. } => {
                 write!(f, "{}", msg)
             }
         }
@@ -399,18 +388,22 @@ impl fmt::Display for RuntimeError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OperationalError {
-    Unimplemented(String),
+    Unimplemented {
+        msg: String,
+    },
     Unknown,
 
     /// An invariant has been broken internally.
-    InvalidState(String),
+    InvalidState {
+        msg: String,
+    },
 }
 
 impl fmt::Display for OperationalError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Unimplemented(s) => write!(f, "{} is not yet implemented", s),
-            Self::InvalidState(s) => write!(f, "Invalid state: {}", s),
+            Self::Unimplemented { msg } => write!(f, "{} is not yet implemented", msg),
+            Self::InvalidState { msg } => write!(f, "Invalid state: {}", msg),
             Self::Unknown => write!(
                 f,
                 "We hit an unexpected error.\n\
@@ -431,20 +424,10 @@ impl fmt::Display for ParameterError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RolesValidationError(pub String);
-
-impl fmt::Display for RolesValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "Oso Roles Validation Error: {}", self.0)
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ValidationError {
     InvalidRule { rule: String, msg: String },
     InvalidPrototype { prototype: String, msg: String },
-    Sugar { msg: String },
-    // TODO: add SingletonVariable and RolesValidationError
+    // TODO(lm|gj): add ResourceBlock and SingletonVariable.
 }
 
 impl fmt::Display for ValidationError {
@@ -455,9 +438,6 @@ impl fmt::Display for ValidationError {
             }
             Self::InvalidPrototype { prototype, msg } => {
                 write!(f, "Invalid prototype: {} {}", prototype, msg)
-            }
-            Self::Sugar { msg } => {
-                write!(f, "{}", msg)
             }
         }
     }

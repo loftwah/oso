@@ -245,30 +245,34 @@ describe('Data filtering using typeorm/sqlite', () => {
   test('a roles policy', async () => {
     const { oso, checkAuthz, aFoo, anotherFoo, helloBar } = await fixtures();
     oso.loadStr(`
-      resource(_: Bar, "bar", actions, roles) if
-        actions = ["get"] and
-        roles = {
-            owner: {
-                permissions: actions,
-                implies: ["foo:reader"]
-            }
-        };
-
-      resource(_: Foo, "foo", actions, roles) if
-        actions = ["read"] and
-        roles = {
-            reader: {
-                permissions: actions
-            }
-        };
-
-      parent_child(bar: Bar, _: Foo{bar: bar});
-
-      actor_has_role_for_resource("steve", "owner", _: Bar{id: "hello"});
-
       allow(actor, action, resource) if
-        role_allows(actor, action, resource);`);
-    oso.enableRoles();
+        has_permission(actor, action, resource);
+
+      has_role("steve", "owner", bar: Bar) if
+        bar.id = "hello";
+
+      actor String {}
+
+      resource Bar {
+        roles = [ "owner" ];
+        permissions = [ "get" ];
+
+        "get" if "owner";
+      }
+
+      resource Foo {
+        roles = [ "reader" ];
+        permissions = [ "read" ];
+        relations = { parent: Bar };
+
+        "read" if "reader";
+
+        "reader" if "owner" on "parent";
+      }
+
+      has_relation(bar: Bar, "parent", foo: Foo) if
+        bar = foo.bar;
+      `);
     await checkAuthz('steve', 'get', Bar, [helloBar]);
     await checkAuthz('steve', 'read', Foo, [aFoo, anotherFoo]);
   });

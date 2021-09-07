@@ -304,11 +304,11 @@ impl VarInfo {
 }
 
 fn err_invalid<A>(msg: String) -> PolarResult<A> {
-    Err(OperationalError::InvalidState(msg).into())
+    Err(OperationalError::InvalidState {msg}.into())
 }
 
 fn err_unimplemented<A>(msg: String) -> PolarResult<A> {
-    Err(OperationalError::Unimplemented(msg).into())
+    Err(OperationalError::Unimplemented {msg}.into())
 }
 
 impl FilterPlan {
