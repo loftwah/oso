@@ -144,7 +144,7 @@ module Oso
         q = authorized_query actr, actn, cls
         return [] if q.nil?
 
-        host.types[cls].exec_query[q]
+        host.types[get_class_name cls].exec_query[q]
       end
 
       # Clear all rules and rule sources from the current Polar instance
