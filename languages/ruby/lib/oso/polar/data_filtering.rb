@@ -84,7 +84,7 @@ module Oso
       end
 
       # Represents relationships between resources, eg. parent/child
-      class Relationship
+      class Relation
         attr_reader :kind, :other_type, :my_field, :other_field
 
         def initialize(kind:, other_type:, my_field:, other_field:)

@@ -14,7 +14,7 @@ pub enum Type {
     Base {
         class_tag: String,
     },
-    Relationship {
+    Relation {
         kind: String,
         other_class_tag: String,
         my_field: String,
@@ -722,7 +722,8 @@ impl<'a> ResultSetBuilder<'a> {
     ) -> PolarResult<()> {
         // FIXME(gw) this function is too big!
 
-        // Non relationship or unknown type info.
+        // FIXME(gw) some kind of explanatory comment about why
+        // we need this would be nice ...
         let mut contributed_constraints = false;
         if let Some(value) = self.vars.eq_values.get(&child) {
             request.constraints.push(Constraint {
@@ -820,7 +821,7 @@ impl<'a> ResultSetBuilder<'a> {
             .iter()
             .filter(|p| p.0 == var_id)
         {
-            if let Some(Type::Relationship {
+            if let Some(Type::Relation {
                 other_class_tag,
                 my_field,
                 other_field,
@@ -838,8 +839,7 @@ impl<'a> ResultSetBuilder<'a> {
 
 impl Vars {
     fn from_op(op: &Operation) -> PolarResult<Self> {
-        let info = VarInfo::from_op(op)?;
-        Ok(Self::from(info))
+        Ok(Self::from(VarInfo::from_op(op)?))
     }
 
     fn type_of(&self, id: &Id) -> Option<&String> {

@@ -11,7 +11,7 @@ end
 
 RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
   DFH = DataFilteringHelpers
-  Relationship = ::Oso::Polar::DataFiltering::Relationship
+  Relation = ::Oso::Polar::DataFiltering::Relation
   Bar = DFH.record(:id, :is_cool, :is_still_cool)
   Foo = DFH.record(:id, :bar_id, :is_fooey, :numbers) do
     def bar
@@ -77,8 +77,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
             'id' => String,
             'foo_id' => String,
             'data' => String,
-            'foo' => Relationship.new(
-              kind: 'parent',
+            'foo' => Relation.new(
+              kind: 'one',
               other_type: 'Foo',
               my_field: 'foo_id',
               other_field: 'id'
@@ -93,14 +93,14 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
             bar_id: String,
             is_fooey: PolarBoolean,
             numbers: Array,
-            bar: Relationship.new(
-              kind: 'parent',
+            bar: Relation.new(
+              kind: 'one',
               other_type: 'Bar',
               my_field: 'bar_id',
               other_field: 'id'
             ),
-            logs: Relationship.new(
-              kind: 'children',
+            logs: Relation.new(
+              kind: 'many',
               other_type: 'FooLog',
               my_field: 'id',
               other_field: 'foo_id'
@@ -223,8 +223,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           name: String,
           books: Array,
           spell_levels: Array,
-          familiars: Relationship.new(
-            kind: 'children',
+          familiars: Relation.new(
+            kind: 'many',
             other_type: 'Familiar',
             my_field: 'name',
             other_field: 'wizard_name'
@@ -247,8 +247,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           name: String,
           kind: String,
           wizard_name: String,
-          wizard: Relationship.new(
-            kind: 'parent',
+          wizard: Relation.new(
+            kind: 'one',
             other_type: 'Wizard',
             my_field: 'wizard_name',
             other_field: 'name'
@@ -328,8 +328,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
         fields: {
           name: String,
           org_name: String,
-          org: Relationship.new(
-            kind: 'parent',
+          org: Relation.new(
+            kind: 'one',
             other_type: 'Org',
             my_field: 'org_name',
             other_field: 'name'
@@ -341,8 +341,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
         fields: {
           name: String,
           repo_name: String,
-          repo: Relationship.new(
-            kind: 'parent',
+          repo: Relation.new(
+            kind: 'one',
             other_type: 'Repo',
             my_field: 'repo_name',
             other_field: 'name'
@@ -353,8 +353,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
         User,
         fields: {
           name: String,
-          roles: Relationship.new(
-            kind: 'children',
+          roles: Relation.new(
+            kind: 'many',
             other_type: 'Role',
             my_field: 'name',
             other_field: 'user_name'
@@ -505,8 +505,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           fields: {
             name: String,
             org_name: String,
-            org: Relationship.new(
-              kind: 'parent',
+            org: Relation.new(
+              kind: 'one',
               other_type: 'Org',
               my_field: 'org_name',
               other_field: 'name'
@@ -518,14 +518,14 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           name: 'Org',
           fields: {
             name: String,
-            users: Relationship.new(
-              kind: 'children',
+            users: Relation.new(
+              kind: 'many',
               other_type: 'User',
               my_field: 'name',
               other_field: 'org_name'
             ),
-            'repos' => Relationship.new(
-              kind: 'children',
+            'repos' => Relation.new(
+              kind: 'many',
               other_type: 'Repo',
               my_field: 'name',
               other_field: 'org_name'
@@ -538,8 +538,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           fields: {
             name: String,
             org_name: String,
-            org: Relationship.new(
-              kind: 'parent',
+            org: Relation.new(
+              kind: 'one',
               other_type: 'Org',
               my_field: 'org_name',
               other_field: 'name'
@@ -552,8 +552,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           fields: {
             name: String,
             repo_name: String,
-            repo: Relationship.new(
-              kind: 'parent',
+            repo: Relation.new(
+              kind: 'one',
               other_type: 'Repo',
               my_field: 'repo_name',
               other_field: 'name'
@@ -650,8 +650,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
             name: String,
             element: String,
             ruler: String,
-            people: Relationship.new(
-              kind: 'children',
+            people: Relation.new(
+              kind: 'many',
               other_type: 'Person',
               my_field: 'name',
               other_field: 'sign_name'
@@ -664,8 +664,8 @@ RSpec.describe Oso::Polar::Polar do # rubocop:disable Metrics/BlockLength
           fields: {
             name: String,
             sign_name: String,
-            sign: Relationship.new(
-              kind: 'parent',
+            sign: Relation.new(
+              kind: 'one',
               other_type: 'Sign',
               my_field: 'sign_name',
               other_field: 'name'

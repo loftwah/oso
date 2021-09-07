@@ -1,5 +1,5 @@
 import { Oso } from './Oso';
-import { Relationship, Field } from './dataFiltering';
+import { Relation, Field } from './dataFiltering';
 import 'reflect-metadata';
 import { Entity, PrimaryColumn, Column, createConnection } from 'typeorm';
 
@@ -136,7 +136,7 @@ async function fixtures() {
   barType.set('id', String);
   barType.set('isCool', Boolean);
   barType.set('isStillCool', Boolean);
-  barType.set('foos', new Relationship('children', 'Foo', 'id', 'barId'));
+  barType.set('foos', new Relation('many', 'Foo', 'id', 'barId'));
   oso.registerClass(Bar, {
     types: barType,
     buildQuery: fromRepo(bars, 'bar'),
@@ -146,8 +146,8 @@ async function fixtures() {
   fooType.set('id', String);
   fooType.set('barId', String);
   fooType.set('isFooey', Boolean);
-  fooType.set('bar', new Relationship('parent', 'Bar', 'barId', 'id'));
-  fooType.set('numbers', new Relationship('children', 'Num', 'id', 'fooId'));
+  fooType.set('bar', new Relation('one', 'Bar', 'barId', 'id'));
+  fooType.set('numbers', new Relation('many', 'Num', 'id', 'fooId'));
   oso.registerClass(Foo, {
     types: fooType,
     buildQuery: fromRepo(foos, 'foo'),
@@ -156,7 +156,7 @@ async function fixtures() {
   const numType = new Map();
   numType.set('number', Number);
   numType.set('fooId', String);
-  numType.set('foo', new Relationship('parent', 'Foo', 'fooId', 'id'));
+  numType.set('foo', new Relation('one', 'Foo', 'fooId', 'id'));
   oso.registerClass(Num, {
     types: numType,
     buildQuery: fromRepo(nums, 'num'),

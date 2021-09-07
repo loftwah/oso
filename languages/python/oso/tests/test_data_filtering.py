@@ -8,7 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from dataclasses import dataclass
 from oso import Oso
-from polar import Relationship
+from polar import Relation
 from functools import reduce
 
 
@@ -100,8 +100,8 @@ def t(oso):
             "id": str,
             "is_cool": bool,
             "is_still_cool": bool,
-            "foos": Relationship(
-                kind="children", other_type="Foo", my_field="id", other_field="bar_id"
+            "foos": Relation(
+                kind="many", other_type="Foo", my_field="id", other_field="bar_id"
             ),
         },
         build_query=get_bars,
@@ -115,11 +115,11 @@ def t(oso):
             "bar_id": str,
             "is_fooey": bool,
             "numbers": list,
-            "bar": Relationship(
-                kind="parent", other_type="Bar", my_field="bar_id", other_field="id"
+            "bar": Relation(
+                kind="one", other_type="Bar", my_field="bar_id", other_field="id"
             ),
-            "logs": Relationship(
-                kind="children",
+            "logs": Relation(
+                kind="many",
                 other_type="FooLogRecord",
                 my_field="id",
                 other_field="foo_id",
@@ -135,8 +135,8 @@ def t(oso):
             "id": str,
             "foo_id": str,
             "data": str,
-            "foo": Relationship(
-                kind="parent", other_type="Foo", my_field="foo_id", other_field="id"
+            "foo": Relation(
+                kind="one", other_type="Foo", my_field="foo_id", other_field="id"
             ),
         },
         build_query=get_foo_logs,
@@ -235,8 +235,8 @@ def sqlalchemy_t(oso):
             "id": str,
             "bar_id": str,
             "is_fooey": bool,
-            "bar": Relationship(
-                kind="parent", other_type="Bar", my_field="bar_id", other_field="id"
+            "bar": Relation(
+                kind="one", other_type="Bar", my_field="bar_id", other_field="id"
             ),
         },
         build_query=get_foos,
@@ -615,8 +615,8 @@ def roles(oso):
         types={
             "name": str,
             "org_name": str,
-            "org": Relationship(
-                kind="parent", other_type="Org", my_field="org_name", other_field="name"
+            "org": Relation(
+                kind="one", other_type="Org", my_field="org_name", other_field="name"
             ),
         },
         build_query=get_repos,
@@ -628,8 +628,8 @@ def roles(oso):
         types={
             "name": str,
             "repo_name": str,
-            "repo": Relationship(
-                kind="parent",
+            "repo": Relation(
+                kind="one",
                 other_type="Repo",
                 my_field="repo_name",
                 other_field="name",
@@ -654,8 +654,8 @@ def roles(oso):
         User,
         types={
             "name": str,
-            "roles": Relationship(
-                kind="children",
+            "roles": Relation(
+                kind="many",
                 other_type="Role",
                 my_field="name",
                 other_field="user_name",
