@@ -133,109 +133,6 @@ impl From<Term> for Constraint {
     }
 }
 
-impl From<VarInfo> for Vars {
-    /// Collapses the var info that we obtained from walking the expressions.
-    /// Track equivalence classes of variables and assign each one an id.
-    fn from(info: VarInfo) -> Self {
-        /// try to find an existing id for this variable.
-        fn seek_var_id(vars: &HashMap<Id, HashSet<Symbol>>, var: &Symbol) -> Option<Id> {
-            vars.iter()
-                .find_map(|(id, set)| set.contains(var).then(|| *id))
-        }
-
-        /// get the id for this variable, or create one if the variable is new.
-        fn get_var_id(
-            vars: &mut HashMap<Id, HashSet<Symbol>>,
-            var: Symbol,
-            counter: &Counter,
-        ) -> Id {
-            seek_var_id(vars, &var).unwrap_or_else(|| {
-                let new_id = counter.next();
-                let mut new_set = HashSet::new();
-                new_set.insert(var);
-                vars.insert(new_id, new_set);
-                new_id
-            })
-        }
-
-        let counter = info.counter;
-
-        // group the variables into equivalence classes.
-        let mut variables = partition_equivs(info.cycles)
-            // Give each cycle an id
-            .into_iter()
-            .map(|c| (counter.next(), c))
-            .collect::<HashMap<_, _>>();
-
-        let fields = info.field_relationships;
-        let mut assign_id = |item| get_var_id(&mut variables, item, &counter);
-
-        let uncycles = info
-            .uncycles
-            .into_iter()
-            .map(|(a, b)| canonical_pair(assign_id(a), assign_id(b)))
-            .collect();
-
-        // now convert the remaining VarInfo fields into equivalent Vars fields.
-
-        let in_relationships = info
-            .in_relationships
-            .into_iter()
-            .map(|(lhs, rhs)| (assign_id(lhs), assign_id(rhs)))
-            .collect::<HashSet<_>>();
-
-        // I think a var can only have one value since we make sure there's a var for the dot lookup,
-        // and if they had aliases they'd be collapsed by now, so it should be an error
-        // if foo.name = "steve" and foo.name = "gabe".
-        let eq_values = info
-            .eq_values
-            .into_iter()
-            .map(|(var, val)| (assign_id(var), val))
-            .collect::<HashMap<_, _>>();
-
-        let neq_values = info
-            .neq_values
-            .into_iter()
-            .map(|(var, val)| (assign_id(var), val))
-            .collect::<HashSet<_>>();
-
-        let types = info
-            .types
-            .into_iter()
-            .map(|(var, typ)| (assign_id(var), typ))
-            .collect::<HashMap<_, _>>();
-
-        let contained_values =
-            info.contained_values
-                .into_iter()
-                .fold(HashMap::new(), |mut map, (val, var)| {
-                    map.entry(assign_id(var))
-                        .or_insert_with(HashSet::new)
-                        .insert(val);
-                    map
-                });
-
-        let field_relationships = fields
-            .into_iter()
-            .map(|(p, f, c)| (assign_id(p), f, assign_id(c)))
-            .collect::<HashSet<_>>();
-
-        let this_id = seek_var_id(&variables, &sym!("_this")).expect("nothing to filter for!");
-
-        Vars {
-            variables,
-            uncycles,
-            field_relationships,
-            in_relationships,
-            eq_values,
-            neq_values,
-            contained_values,
-            types,
-            this_id,
-        }
-    }
-}
-
 impl VarInfo {
     fn from_op(op: &Operation) -> PolarResult<Self> {
         let mut info = Self::default();
@@ -659,11 +556,7 @@ impl<'a> ResultSetBuilder<'a> {
         {
             self.constrain_var(*l, var_type)?;
             if let Some(in_result_set) = self.result_set.requests.remove(l) {
-                let last = self.result_set.resolve_order.pop();
-                if last != Some(*l) {
-                    let msg = format!("Invalid resolve order: wanted {}, got {:?}", l, last);
-                    return err_invalid(msg);
-                }
+                self.result_set.resolve_order.retain(|x| x != l);
                 request.constraints.extend(in_result_set.constraints);
             }
         }
@@ -721,10 +614,9 @@ impl<'a> ResultSetBuilder<'a> {
         child: Id,
     ) -> PolarResult<()> {
         // FIXME(gw) this function is too big!
-
-        // FIXME(gw) some kind of explanatory comment about why
-        // we need this would be nice ...
+        // some kind of explanatory comment about why we need this would be nice ...
         let mut contributed_constraints = false;
+
         if let Some(value) = self.vars.eq_values.get(&child) {
             request.constraints.push(Constraint {
                 kind: ConstraintKind::Eq,
@@ -798,11 +690,11 @@ impl<'a> ResultSetBuilder<'a> {
         }
 
         if contributed_constraints {
-            Ok(())
-        } else {
-            let msg = format!("no constraint: {}.{}={}", var_id, field, child);
-            err_invalid(msg)
+            return Ok(());
         }
+
+        let msg = format!("no constraint: {}.{}={}", var_id, field, child);
+        err_invalid(msg)
     }
 
     fn constrain_fields(
@@ -839,7 +731,111 @@ impl<'a> ResultSetBuilder<'a> {
 
 impl Vars {
     fn from_op(op: &Operation) -> PolarResult<Self> {
-        Ok(Self::from(VarInfo::from_op(op)?))
+        Self::from_info(VarInfo::from_op(op)?)
+    }
+
+    /// Collapses the var info that we obtained from walking the expressions.
+    /// Track equivalence classes of variables and assign each one an id.
+    fn from_info(info: VarInfo) -> PolarResult<Self> {
+        /// try to find an existing id for this variable.
+        fn seek_var_id(vars: &HashMap<Id, HashSet<Symbol>>, var: &Symbol) -> Option<Id> {
+            vars.iter()
+                .find_map(|(id, set)| set.contains(var).then(|| *id))
+        }
+
+        /// get the id for this variable, or create one if the variable is new.
+        fn get_var_id(
+            vars: &mut HashMap<Id, HashSet<Symbol>>,
+            var: Symbol,
+            counter: &Counter,
+        ) -> Id {
+            seek_var_id(vars, &var).unwrap_or_else(|| {
+                let new_id = counter.next();
+                let mut new_set = HashSet::new();
+                new_set.insert(var);
+                vars.insert(new_id, new_set);
+                new_id
+            })
+        }
+
+        let counter = info.counter;
+
+        // group the variables into equivalence classes.
+        let mut variables = partition_equivs(info.cycles)
+            // Give each cycle an id
+            .into_iter()
+            .map(|c| (counter.next(), c))
+            .collect::<HashMap<_, _>>();
+
+        let fields = info.field_relationships;
+        let mut assign_id = |item| get_var_id(&mut variables, item, &counter);
+
+        let uncycles = info
+            .uncycles
+            .into_iter()
+            .map(|(a, b)| canonical_pair(assign_id(a), assign_id(b)))
+            .collect();
+
+        // now convert the remaining VarInfo fields into equivalent Vars fields.
+
+        let in_relationships = info
+            .in_relationships
+            .into_iter()
+            .map(|(lhs, rhs)| (assign_id(lhs), assign_id(rhs)))
+            .collect::<HashSet<_>>();
+
+        // I think a var can only have one value since we make sure there's a var for the dot lookup,
+        // and if they had aliases they'd be collapsed by now, so it should be an error
+        // if foo.name = "steve" and foo.name = "gabe".
+        let eq_values = info
+            .eq_values
+            .into_iter()
+            .map(|(var, val)| (assign_id(var), val))
+            .collect::<HashMap<_, _>>();
+
+        let neq_values = info
+            .neq_values
+            .into_iter()
+            .map(|(var, val)| (assign_id(var), val))
+            .collect::<HashSet<_>>();
+
+        let types = info
+            .types
+            .into_iter()
+            .map(|(var, typ)| (assign_id(var), typ))
+            .collect::<HashMap<_, _>>();
+
+        let contained_values =
+            info.contained_values
+                .into_iter()
+                .fold(HashMap::new(), |mut map, (val, var)| {
+                    map.entry(assign_id(var))
+                        .or_insert_with(HashSet::new)
+                        .insert(val);
+                    map
+                });
+
+        let field_relationships = fields
+            .into_iter()
+            .map(|(p, f, c)| (assign_id(p), f, assign_id(c)))
+            .collect::<HashSet<_>>();
+
+        let this_id = match seek_var_id(&variables, &sym!("_this")) {
+            Some(id) => id,
+            None => return err_invalid("No `_this` variable".to_string()),
+        };
+
+        Ok(Vars {
+            variables,
+            uncycles,
+            field_relationships,
+            in_relationships,
+            eq_values,
+            neq_values,
+            contained_values,
+            types,
+            this_id,
+        })
     }
 
     fn type_of(&self, id: &Id) -> Option<&String> {
@@ -939,6 +935,7 @@ mod test {
             ResultEvent { bindings }
         }
     }
+
     fn unord_eq<A>(a: Vec<A>, mut b: Vec<A>) -> bool
     where
         A: Eq,
@@ -968,7 +965,7 @@ mod test {
                         if let Some(i) = index_of(order, &id) {
                             if i >= j {
                                 return err_invalid(format!(
-                                    "Request {} resolved after dependent request {} in {:?}",
+                                    "Request {} resolved after dependency {} in {:?}",
                                     id, k, rset
                                 ));
                             }
@@ -992,19 +989,17 @@ mod test {
 
     #[test]
     fn test_dot_plan() -> TestResult {
-        let instance0: Term = ExternalInstance::from(0).into();
-        let instance1: Term = ExternalInstance::from(1).into();
+        let ins0: Term = ExternalInstance::from(0).into();
+        let ins1: Term = ExternalInstance::from(1).into();
+        let pat_a = ptn!(instance!("A"));
+        let pat_b = ptn!(instance!("B"));
         let partial = opn!(
             And,
-            opn!(Isa, var!("_this"), Pattern::from(instance!("A")).into()),
-            opn!(Isa, instance0.clone(), Pattern::from(instance!("B")).into()),
-            opn!(Isa, instance1.clone(), Pattern::from(instance!("B")).into()),
-            opn!(Unify, opn!(Dot, instance0, str!("field")), var!("_this")),
-            opn!(
-                Unify,
-                opn!(Dot, var!("_this"), str!("field")),
-                opn!(Dot, instance1, str!("field"))
-            )
+            opn!(Isa, var!("_this"), pat_a),
+            opn!(Isa, ins0.clone(), pat_b.clone()),
+            opn!(Isa, ins1.clone(), pat_b),
+            opn!(Unify, opn!(Dot, ins0, str!("field")), var!("_this")),
+            opn!(Unify, opn!(Dot, var!("_this"), str!("field")), ins1)
         );
 
         let bindings = ResultEvent::from(hashmap! {
@@ -1023,8 +1018,7 @@ mod test {
                 }
             }
         };
-        let plan = build_filter_plan(types, vec![bindings], "resource", "something")
-            .expect("no filter plan!");
+        let plan = build_filter_plan(types, vec![bindings], "resource", "something")?;
         for rs in plan.result_sets {
             check_result_set(rs)?
         }
