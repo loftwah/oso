@@ -33,3 +33,4 @@ pub mod traces;
 mod visitor;
 mod vm;
 mod warnings;
+pub mod compile;

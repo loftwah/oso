@@ -37,7 +37,7 @@ pub struct KnowledgeBase {
     /// Map from source code loaded to the filename it was loaded as
     pub loaded_content: HashMap<String, String>,
 
-    rules: HashMap<Symbol, GenericRule>,
+    pub rules: HashMap<Symbol, GenericRule>,
     rule_types: RuleTypes,
     pub sources: Sources,
     /// For symbols returned from gensym.

@@ -48,6 +48,18 @@ test('it works', async () => {
   expect(result).toStrictEqual([map({ x: 1 })]);
 });
 
+describe('#compile', () => {
+  test('works', async () => {
+    const p = new Polar();
+    await p.loadStr('foo(a, b) if a=1 and b=a; foo(a, b) if a=2 and b=3;');
+    const query = p.compile();
+    expect(query('foo', 1, 2)).toBeUndefined();
+    expect(query('foo', 1, 1)).toBeDefined();
+    expect(query('foo', 2, 2)).toBeUndefined();
+    expect(query('foo', 2, 3)).toBeDefined();
+  });
+});
+
 describe('#registerClass', () => {
   test('can specialize on a registered class', async () => {
     const p = new Polar();

@@ -82,6 +82,12 @@ impl Polar {
             .map_err(Error::into)
     }
 
+    #[wasm_bindgen(js_class = Polar, js_name = compileJs)]
+    pub fn wasm_compile_js(&self) -> JsResult<JsValue> {
+        let js = self.0.compile_js().unwrap();
+        serde_wasm_bindgen::to_value(&js).map_err(|e| serialization_error(e.to_string()))
+    }
+
     #[wasm_bindgen(js_class = Polar, js_name = buildFilterPlan)]
     pub fn wasm_build_filter_plan(
         &self,

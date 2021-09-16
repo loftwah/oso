@@ -9,6 +9,7 @@ use super::runnable::Runnable;
 use super::sources::*;
 use super::terms::*;
 use super::vm::*;
+use super::compile::*;
 use super::warnings::{check_ambiguous_precedence, check_singletons};
 
 use std::sync::{Arc, RwLock};
@@ -326,6 +327,10 @@ impl Polar {
 
     pub fn next_message(&self) -> Option<Message> {
         self.messages.next()
+    }
+
+    pub fn compile_js(&self) -> PolarResult<String> {
+        Ok(self.compile().0)
     }
 
     pub fn build_filter_plan(

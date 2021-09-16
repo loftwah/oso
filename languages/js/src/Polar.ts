@@ -101,6 +101,11 @@ export class Polar {
     this.#ffiPolar.free();
   }
 
+  compile() {
+    const js = this.#ffiPolar.compileJs();
+    return eval(`(function(){${kanren};return ${js}})()`);
+  }
+
   /**
    * For tests only.
    *
@@ -352,3 +357,64 @@ export class Polar {
     }
   }
 }
+
+const kanren = `
+let varCounter = 0;
+class Var {
+  constructor() { this.id = varCounter++; }
+  reify() { return '_' + this.id; }
+  valueIn(s) { 
+    let v = this;
+    while (isVar(v = s[v.reify()]));
+    return v;
+  }
+}
+
+const fresh = () => new Var(),
+      isVar = x => x instanceof Var,
+      isAry = x => x instanceof Array,
+      isObj = x => x instanceof Object,
+      assign = (a, b) => s => (s[a.reify()] = b, s),
+      walk = u => s => isVar(u) && u.reify() in s ? walk(s[u.reify()])(s) : u,
+      splitObj = (a, b) => split(a.entries(), b.entries()),
+      join = (a, b) => s => {
+        const joinObj = (a, b) => joinAry(a.entries(), b.entries()),
+              joinAry = (a, b) => s => {
+                if (a.length != b.length) return undefined;
+                for (const i in a) {
+                  s = join(a[i], b[i])(s);
+                  if (!s) break;
+                }
+                return s;
+              };
+        a = walk(a)(s);
+        b = walk(b)(s);
+        if (a == b)               return s;
+        if (isVar(a))             return assign(a, b)(s);
+        if (isVar(b))             return assign(b, a)(s);
+        if (isAry(a) && isAry(b)) return joinAry(a, b)(s);
+        if (isObj(a) && isObj(b)) return joinObj(a, b)(s);
+        return undefined;
+      },
+
+      split = (a, b) => s => {
+        const splitAry = (a, b) => s => {
+          if (a.length != b.length) return s;
+          for (const i in a)
+            if (split(a[i], b[i])(s)) return s;
+          return undefined;
+        };
+        a = walk(a)(s);
+        b = walk(b)(s);
+        if (isAry(a) && isAry(b)) return splitAry(a, b)(s);
+        if (isObj(a) && isObj(b)) return splitObj(a, b)(s);
+        return a !== b ? s : undefined;
+      },
+      run = g => g({}),
+      conj = (a, b) => s => a(s) && b(s),
+      disj = (a, b) => s => a(Object.assign({}, s)) || b(s);
+
+const assert = (x) => {
+  if (!x) throw new Error("nope");
+};
+`;
