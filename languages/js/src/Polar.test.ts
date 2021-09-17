@@ -66,6 +66,16 @@ describe('#compile', () => {
     expect(q('foo')).toBeUndefined();
   });
 
+  test('or', async () => {
+    const q = await polar('foo(a) if a = 1; foo(a) if a = 2; bar(x) if x = 1 or x = 2;');
+    expect(q('foo', 1)).toBeDefined();
+    expect(q('foo', 2)).toBeDefined();
+    expect(q('foo', 3)).toBeUndefined();
+    expect(q('bar', 1)).toBeDefined();
+    expect(q('bar', 2)).toBeDefined();
+    expect(q('bar', 3)).toBeUndefined();
+  });
+
   test('eq/2', async () => {
     const q = await polar('foo(a, b) if a = b;');
     expect(q('foo', new Var(), new Var())).toBeDefined();
@@ -94,6 +104,39 @@ describe('#compile', () => {
     expect(q('foo', 1, {a: 1})).toBeDefined();
     expect(q('foo', 2, {a: 1})).toBeUndefined();
   });
+
+  test('calls', async () => {
+    const q = await polar('foo(a) if a=1 or a=2; bar(a) if foo(a) or a matches List;');
+    expect(q('foo', 1)).toBeDefined();
+    expect(q('foo', 2)).toBeDefined();
+    expect(q('foo', 3)).toBeUndefined();
+    expect(q('foo', [1, 2])).toBeUndefined();
+    expect(q('foo', 'bar')).toBeUndefined();
+    expect(q('bar', 1)).toBeDefined();
+    expect(q('bar', 2)).toBeDefined();
+    expect(q('bar', 3)).toBeUndefined();
+    expect(q('bar', [1, 2])).toBeDefined();
+  });
+
+  /*
+  test('recursion', async () => {
+    const q = await polar('foo(a) if a = [] or (a = [[], b] and foo(b));');
+    expect(q('foo', [1])).toBeUndefined();
+    expect(q('foo', [1, 2])).toBeUndefined();
+    expect(q('foo', [[], []])).toBeDefined();
+    expect(q('foo', [[], [[], [[], [[], []]]]])).toBeDefined();
+    expect(q('foo', [[], [[], [[], [[], {}]]]])).toBeUndefined();
+  });
+  test('it can read fields on js objects', async () => {
+    const p = new Polar();
+    await p.loadStr('foo(a) if a.a = 1;');
+    const query = p.compile();
+    expect(query('foo', {})).toBeUndefined();
+    expect(query('foo', {a: 1})).toBeDefined();
+    expect(query('foo', {a: 2})).toBeUndefined();
+    expect(query('foo', {b: 1})).toBeUndefined();
+  });
+  */
 
   test('neq/2', async () => {
     const q = await polar('foo(a, b) if a != b;');
@@ -132,17 +175,6 @@ describe('#compile', () => {
     expect(q('bar', 1, 1)).toBeDefined();
   });
 
-  /*
-  test('it can read fields on js objects', async () => {
-    const p = new Polar();
-    await p.loadStr('foo(a) if a.a = 1;');
-    const query = p.compile();
-    expect(query('foo', {})).toBeUndefined();
-    expect(query('foo', {a: 1})).toBeDefined();
-    expect(query('foo', {a: 2})).toBeUndefined();
-    expect(query('foo', {b: 1})).toBeUndefined();
-  });
-  */
 });
 
 describe('#registerClass', () => {

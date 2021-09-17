@@ -49,7 +49,7 @@ impl Compile<JS> for Symbol {
 impl Compile<JS> for Call {
     fn compile(&self) -> JS {
         let args = self.args.iter().map(|x| x.compile().0).collect::<Vec<_>>().join(",");
-        JS(format!("{}({})", self.name.0, args))
+        JS(format!("(kb[\"{}\"].map(f=>f({})).reduce(disj))", self.name.0, args))
     }
 }
 
@@ -69,16 +69,14 @@ impl Compile<JS> for Operation {
                 format!("join({},{})", self.args[0].compile().0, self.args[1].compile().0),
             Operator::Neq =>
                 format!("split({},{})", self.args[0].compile().0, self.args[1].compile().0),
-            Operator::And if self.args.len() == 0 => "(x=>x)".to_owned(),
-            Operator::And => {
-                let args = self.args.iter().rev().map(|x| x.compile().0);
-                args.reduce(|m, i| format!("conj({},{})", i, m)).unwrap()
-            }
-            Operator::Or if self.args.len() == 0 => "(_=>undefined)".to_owned(),
-            Operator::Or  => {
-                let args = self.args.iter().rev().map(|x| x.compile().0);
-                args.reduce(|m, i| format!("disj({},{})", i, m)).unwrap()
-            }
+            Operator::And =>
+                self.args.iter().rev() .fold("(x=>x)".to_owned(), |m, i| {
+                    format!("conj({},{})", i.compile().0, m)
+                }),
+            Operator::Or  =>
+                self.args.iter().rev().fold("(_=>undefined)".to_owned(), |m, i| {
+                    format!("disj({},{})", i.compile().0, m)
+                }),
             Operator::Not =>
                 format!("(s=>({})(Object.assign({{}},s))===undefined?s:undefined)", self.args[0].compile().0),
             Operator::Dot =>
@@ -146,7 +144,7 @@ impl Compile<JS> for KnowledgeBase {
 impl Compile<JS> for Polar {
     fn compile(&self) -> JS {
         let kb = self.kb.read().unwrap().compile().0;
-        JS(format!("(((rule,...args)=>({})[rule].map(f=>f(...args)).reduce(disj)({{}})))", kb))
+        JS(format!("((rule,...args)=>{{const kb={};return kb[rule].map(f=>f(...args)).reduce(disj)({{}})}})", kb))
     }
 }
 
