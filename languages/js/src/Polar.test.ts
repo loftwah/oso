@@ -1,4 +1,4 @@
-import { Polar } from './Polar';
+import { Polar, Var } from './Polar';
 import { Expression } from './Expression';
 import { Variable } from './Variable';
 import {
@@ -49,14 +49,75 @@ test('it works', async () => {
 });
 
 describe('#compile', () => {
-  test('works', async () => {
+  const polar = async (pol: string) => {
     const p = new Polar();
-    await p.loadStr('foo(a, b) if a=1 and b=a; foo(a, b) if a=2 and b=3;');
+    await p.loadStr(pol);
+    return p.compile();
+  };
+
+  test('it works', async () => {
+    const q = await polar('foo(a, b) if a=1 and b=a; foo(a, b) if a=2 and b=3;');
+    expect(q('foo', new Var(), new Var())).toBeDefined();
+    expect(q('foo', 1, new Var())).toBeDefined();
+    expect(q('foo', 1, 2)).toBeUndefined();
+    expect(q('foo', 1, 1)).toBeDefined();
+    expect(q('foo', 2, 2)).toBeUndefined();
+    expect(q('foo', 2, 3)).toBeDefined();
+    expect(q('foo')).toBeUndefined();
+  });
+
+  test('equals', async () => {
+    const q = await polar('foo(a, b) if a = b;');
+    expect(q('foo', new Var(), new Var())).toBeDefined();
+    expect(q('foo', new Var(), 1)).toBeDefined();
+    expect(q('foo', 1, new Var())).toBeDefined();
+    expect(q('foo', 1, 2)).toBeUndefined();
+    expect(q('foo', NaN, NaN)).toBeUndefined();
+    expect(q('foo', [1], new Var())).toBeDefined();
+    expect(q('foo', [1], [new Var()])).toBeDefined();
+    expect(q('foo', [1], [1])).toBeDefined();
+    expect(q('foo', [1], [2])).toBeUndefined();
+    expect(q('foo', new Var(), {a: 1})).toBeDefined();
+    expect(q('foo', {a: 1}, {a: new Var()})).toBeDefined();
+    expect(q('foo', {a: 1}, {a: []})).toBeUndefined();
+    expect(q('foo', {a: 1}, {a: 1, b: 2})).toBeUndefined();
+  });
+
+  test('arrays', async () => {
+    const q = await polar('foo(a, b) if [a, 1] = b;');
+    expect(q('foo', 1, [1, 1])).toBeDefined();
+    expect(q('foo', 2, [1, 1])).toBeUndefined();
+  });
+
+  test('objects', async () => {
+    const q = await polar('foo(a, b) if {a: a} = b;');
+    expect(q('foo', 1, {a: 1})).toBeDefined();
+    expect(q('foo', 2, {a: 1})).toBeUndefined();
+  });
+
+  test('a contradiction', async () => {
+    const q = await polar('foo(x, y) if x = y and x != y;');
+    expect(q('foo', 1, 1)).toBeUndefined();
+    expect(q('foo', 1, 2)).toBeUndefined();
+  });
+
+  test('not equals', async () => {
+    const q = await polar('foo(a, b) if a != b;');
+    expect(q('foo', 1, 1)).toBeUndefined();
+    expect(q('foo', 1, 2)).toBeDefined();
+    expect(q('foo', [[3], {num: 4}], [[3], {num: 4}])).toBeUndefined();
+    expect(q('foo', [[3], {num: 4}], [[2], {num: 3}])).toBeDefined();
+    expect(q('foo', NaN, NaN)).toBeDefined();
+  });
+
+  test('it can read fields on js objects', async () => {
+    const p = new Polar();
+    await p.loadStr('foo(a) if a.a = 1;');
     const query = p.compile();
-    expect(query('foo', 1, 2)).toBeUndefined();
-    expect(query('foo', 1, 1)).toBeDefined();
-    expect(query('foo', 2, 2)).toBeUndefined();
-    expect(query('foo', 2, 3)).toBeDefined();
+    expect(query('foo', {})).toBeUndefined();
+    expect(query('foo', {a: 1})).toBeDefined();
+    expect(query('foo', {a: 2})).toBeUndefined();
+    expect(query('foo', {b: 1})).toBeUndefined();
   });
 });
 

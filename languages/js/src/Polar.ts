@@ -102,8 +102,7 @@ export class Polar {
   }
 
   compile() {
-    const js = this.#ffiPolar.compileJs();
-    return eval(`(function(){${kanren};return ${js}})()`);
+    return eval(this.#ffiPolar.compileJs());
   }
 
   /**
@@ -358,63 +357,52 @@ export class Polar {
   }
 }
 
-const kanren = `
 let varCounter = 0;
-class Var {
-  constructor() { this.id = varCounter++; }
-  reify() { return '_' + this.id; }
-  valueIn(s) { 
-    let v = this;
-    while (isVar(v = s[v.reify()]));
-    return v;
+export class Var {
+  id: number;
+  tag: string | undefined;
+  constructor(tag?: string) {
+    this.id = varCounter++;
+    this.tag = tag;
   }
+  reify = () => `_${this.tag}_${this.id}`;
 }
 
-const fresh = () => new Var(),
-      isVar = x => x instanceof Var,
-      isAry = x => x instanceof Array,
-      isObj = x => x instanceof Object,
-      assign = (a, b) => s => (s[a.reify()] = b, s),
-      walk = u => s => isVar(u) && u.reify() in s ? walk(s[u.reify()])(s) : u,
-      splitObj = (a, b) => split(a.entries(), b.entries()),
-      join = (a, b) => s => {
-        const joinObj = (a, b) => joinAry(a.entries(), b.entries()),
-              joinAry = (a, b) => s => {
-                if (a.length != b.length) return undefined;
-                for (const i in a) {
-                  s = join(a[i], b[i])(s);
-                  if (!s) break;
-                }
-                return s;
-              };
-        a = walk(a)(s);
-        b = walk(b)(s);
-        if (a == b)               return s;
-        if (isVar(a))             return assign(a, b)(s);
-        if (isVar(b))             return assign(b, a)(s);
-        if (isAry(a) && isAry(b)) return joinAry(a, b)(s);
-        if (isObj(a) && isObj(b)) return joinObj(a, b)(s);
-        return undefined;
-      },
-
-      split = (a, b) => s => {
-        const splitAry = (a, b) => s => {
-          if (a.length != b.length) return s;
-          for (const i in a)
-            if (split(a[i], b[i])(s)) return s;
-          return undefined;
-        };
-        a = walk(a)(s);
-        b = walk(b)(s);
-        if (isAry(a) && isAry(b)) return splitAry(a, b)(s);
-        if (isObj(a) && isObj(b)) return splitObj(a, b)(s);
-        return a !== b ? s : undefined;
-      },
-      run = g => g({}),
-      conj = (a, b) => s => a(s) && b(s),
-      disj = (a, b) => s => a(Object.assign({}, s)) || b(s);
-
-const assert = (x) => {
-  if (!x) throw new Error("nope");
-};
-`;
+const
+  nah = (_: any) => undefined,
+  yes = (x: any) => x,
+  is = (x: any, y: any) => x instanceof y,
+  assign = (a: any, b: any) => (s: any) => (s[a.reify()] = b, s),
+  walk = (u: any) => (s: any): any => is(u, Var) && u.reify() in s ? walk(s[u.reify()])(s) : u,
+  conj = (a: any, b: any) => (s: any) => a(s) && b(s),
+  disj = (a: any, b: any) => (s: any) => a(Object.assign({}, s)) || b(s),
+  join = (a: any, b: any) => (s: any): any => {
+    const joinObj = (a: any, b: any) => joinAry(Object.entries(a), Object.entries(b)),
+          joinAry = (a: any, b: any) => {
+            if (a.length != b.length) return undefined;
+            for (const i in a) {
+              s = join(a[i], b[i])(s);
+              if (!s) break;
+            }
+            return s;
+          };
+    a = walk(a)(s), b = walk(b)(s);
+    if (a == b)                         return s;
+    if (is(a, Var))                     return assign(a, b)(s);
+    if (is(b, Var))                     return assign(b, a)(s);
+    if (is(a, Array) && is(b, Array))   return joinAry(a, b);
+    if (is(a, Object) && is(b, Object)) return joinObj(a, b);
+    return undefined;
+  },
+  split = (a: any, b: any) => (s: any): any => {
+    const splitObj = (a: any, b: any) => splitAry(Object.entries(a), Object.entries(b)),
+          splitAry = (a: any, b: any) => {
+            if (a.length != b.length) return s;
+            for (const i in a) if (split(a[i], b[i])(s)) return s;
+            return undefined;
+          };
+    a = walk(a)(s), b = walk(b)(s);
+    if (is(a, Array) && is(b, Array))   return splitAry(a, b);
+    if (is(a, Object) && is(b, Object)) return splitObj(a, b);
+    return a !== b ? s : undefined;
+  };
