@@ -9,7 +9,6 @@ pub trait Compile<T> {
     fn compile(&self) -> T;
 }
 
-
 impl Compile<JS> for Numeric {
     fn compile(&self) -> JS {
         match self {
@@ -49,7 +48,7 @@ impl Compile<JS> for Symbol {
 impl Compile<JS> for Call {
     fn compile(&self) -> JS {
         let args = self.args.iter().map(|x| x.compile().0).collect::<Vec<_>>().join(",");
-        JS(format!("(kb[\"{}\"].map(f=>f({})).reduce(disj))", self.name.0, args))
+        JS(format!("(s=>(kb[\"{}\"].map(f=>f({})).reduce(disj))(s))", self.name.0, args))
     }
 }
 
@@ -80,7 +79,7 @@ impl Compile<JS> for Operation {
             Operator::Not =>
                 format!("(s=>({})(Object.assign({{}},s))===undefined?s:undefined)", self.args[0].compile().0),
             Operator::Dot =>
-                format!("(s=>walk({})(s)[walk({})(s)])", self.args[0].compile().0, self.args[1].compile().0),
+                format!("join({},(s=>walk({})(s)[{}]))", self.args[2].compile().0, self.args[0].compile().0, self.args[1].compile().0),
             Operator::Isa =>
                 format!("(s=>is(walk({})(s),{})?s:undefined)", self.args[0].compile().0, self.args[1].compile().0),
             _ => unimplemented!("don't know how to compile {:?}", self)
@@ -105,21 +104,26 @@ impl Compile<JS> for Term {
 
 impl Compile<JS> for Rule {
     fn compile(&self) -> JS {
-        let params = self.params.iter()
-            .map(|p| p.parameter.compile().0)
-            .collect::<Vec<_>>();
+        let params: Vec<_> = {
+            let mut a = self.params.iter().map(|p| p.parameter.value().as_symbol().unwrap().clone().clone()).collect::<Vec<_>>();
+            for v in self.body.value().as_expression().unwrap().variables() {
+                if a.iter().find(|x| **x == v).is_none() {
+                    a.push(v)
+                }
+            }
+            a.into_iter().map(|p| p.compile().0).collect()
+        };
+        eprintln!("params {:?}", params);
         let params1 = params.join(",");
         let params2 = params.iter()
             .map(|p| format!("_{}", p))
             .collect::<Vec<_>>()
             .join(",");
-        let body = self.params.iter().rev()
-            .map(|p| {
-                let nom = p.parameter.compile().0;
-                format!("join({},_{})", nom, nom)
-            })
+        let body = params.iter()
+            .map(|nom|
+                format!("join({},_{})", nom, nom))
             .fold(self.body.compile().0, |m, i| format!("conj({},{})", i, m));
-        let vars = self.params.iter()
+        let vars = params.iter()
             .map(|_| "(new Var())".to_owned())
             .collect::<Vec<_>>()
             .join(",");
