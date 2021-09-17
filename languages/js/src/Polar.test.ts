@@ -116,12 +116,20 @@ describe('#compile', () => {
     expect(q('foo', 'qwer')).toBeDefined();
   });
 
-  test('isa/2', async() => {
+  test('isa/2', async () => {
     const q = await polar('foo(x) if x matches Dictionary; bar(x) if x matches Number;');
     expect(q('foo', {})).toBeDefined();
     expect(q('foo', 1)).toBeUndefined();
     expect(q('bar', 1)).toBeDefined();
     expect(q('bar', ['asdf'])).toBeUndefined();
+  });
+
+  test('not/1', async () => {
+    const q = await polar('foo(a, b) if not a = b; bar(a, b) if not a != b;');
+    expect(q('foo', 1, 1)).toBeUndefined();
+    expect(q('foo', 1, 2)).toBeDefined();
+    expect(q('bar', 1, 2)).toBeUndefined();
+    expect(q('bar', 1, 1)).toBeDefined();
   });
 
   /*

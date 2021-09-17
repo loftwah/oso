@@ -79,6 +79,8 @@ impl Compile<JS> for Operation {
                 let args = self.args.iter().rev().map(|x| x.compile().0);
                 args.reduce(|m, i| format!("disj({},{})", i, m)).unwrap()
             }
+            Operator::Not =>
+                format!("(s=>({})(Object.assign({{}},s))===undefined?s:undefined)", self.args[0].compile().0),
             Operator::Dot =>
                 format!("(s=>walk({})(s)[walk({})(s)])", self.args[0].compile().0, self.args[1].compile().0),
             Operator::Isa =>
