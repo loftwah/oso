@@ -71,6 +71,11 @@ describe('#compile', () => {
     expect(query('foo', { a: 1 })).toBeDefined();
   });
 
+  test('empty policy', async () => {
+    const q = await polar('');
+    expect(q('foo')).toBeUndefined();
+  });
+
   test('literals in rule head', async () => {
     const q = await polar('foo("hello"); foo("world"); foo(1);');
     expect(q('foo', 'hello')).toBeDefined();

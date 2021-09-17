@@ -213,7 +213,7 @@ impl Compile<JS> for KnowledgeBase {
 impl Compile<JS> for Polar {
     fn compile(&self) -> JS {
         let kb = self.kb.read().unwrap().compile().0;
-        JS(format!("((rule,...args)=>{{const kb={};return kb[rule].map(f=>f(...args)).reduce(disj)({{}})}})", kb))
+        JS(format!("((rule,...args)=>{{const kb={};return (kb[rule]||[_=>_=>undefined]).map(f=>f(...args)).reduce(disj)({{}})}})", kb))
     }
 }
 
