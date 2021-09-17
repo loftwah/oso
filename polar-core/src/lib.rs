@@ -8,6 +8,7 @@ extern crate maplit;
 pub mod macros;
 
 mod bindings;
+mod compile;
 mod counter;
 pub mod data_filtering;
 mod debugger;
@@ -33,4 +34,3 @@ pub mod traces;
 mod visitor;
 mod vm;
 mod warnings;
-pub mod compile;

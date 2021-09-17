@@ -1,3 +1,4 @@
+use super::compile::*;
 use super::data_filtering::{build_filter_plan, FilterPlan, PartialResults, Types};
 use super::error::PolarResult;
 use super::events::*;
@@ -9,7 +10,6 @@ use super::runnable::Runnable;
 use super::sources::*;
 use super::terms::*;
 use super::vm::*;
-use super::compile::*;
 use super::warnings::{check_ambiguous_precedence, check_singletons};
 
 use std::sync::{Arc, RwLock};

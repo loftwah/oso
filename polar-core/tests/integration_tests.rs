@@ -16,7 +16,6 @@ use polar_core::{
     sym, term,
     terms::*,
     traces::*,
-    compile::*,
     value, values,
 };
 
@@ -428,19 +427,6 @@ fn test_nested_rule() -> TestResult {
     qeval(&mut p, "j(4)");
     Ok(())
 }
-
-/*
-#[test]
-fn test_compile() {
-    let mut p = Polar::new();
-    p.load_str(r#"
-        foo(a, b) if a=1 and b=a;
-        foo(a, b) if a=2 and b=3;
-    "#);
-
-    assert_eq!(p.compile().0, "".to_owned())
-}
-*/
 
 /// A functions permutation that is known to fail.
 #[test]
