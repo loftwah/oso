@@ -2,6 +2,8 @@ use crate::kb::*;
 use crate::polar::*;
 use crate::rules::*;
 use crate::terms::*;
+use crate::counter::*;
+use std::collections::HashMap;
 
 pub struct JS(pub String);
 pub trait Compile<T> {
@@ -137,14 +139,21 @@ impl Compile<JS> for Term {
 
 impl Compile<JS> for Rule {
     fn compile(&self) -> JS {
-        let formal_params = self
-            .params
-            .iter()
-            .map(|p| p.parameter.value().as_symbol().unwrap().clone())
-            .collect::<Vec<_>>();
+        let counter = Counter::default();
+        let mut lits: HashMap<String, Term> = HashMap::new();
+        let gensym = || Symbol(format!("__{}__", counter.next()));
+        let body = self.body.value().as_expression().unwrap().clone();
+        let formal_params = self.params.iter().map(|p| match p.parameter.value().as_symbol() {
+            Ok(s) => s.clone(),
+            _ => {
+                let sym = gensym();
+                lits.insert(sym.0.clone(), p.parameter.clone());
+                sym
+            }
+        }).collect::<Vec<_>>();
         let all_vars: Vec<_> = {
             let mut a = formal_params.clone();
-            for v in self.body.value().as_expression().unwrap().variables() {
+            for v in body.variables() {
                 if !a.iter().any(|x| *x == v) {
                     a.push(v)
                 }
@@ -163,7 +172,13 @@ impl Compile<JS> for Rule {
             .fold(self.body.compile().0, |m, i| format!("conj({},{})", i, m));
         let vars = all_vars
             .iter()
-            .map(|_| "(new Var())".to_owned())
+            .map(|s| {
+                if let Some(t) = lits.remove(s) {
+                    t.compile().0
+                } else {
+                    "(new Var())".to_owned()
+                }
+            })
             .collect::<Vec<_>>()
             .join(",");
         JS(format!(

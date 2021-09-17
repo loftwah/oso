@@ -71,6 +71,15 @@ describe('#compile', () => {
     expect(query('foo', { a: 1 })).toBeDefined();
   });
 
+  test('literals in rule head', async () => {
+    const q = await polar('foo("hello"); foo("world"); foo(1);');
+    expect(q('foo', 'hello')).toBeDefined();
+    expect(q('foo', 'world')).toBeDefined();
+    expect(q('foo', 'word')).toBeUndefined();
+    expect(q('foo', 1)).toBeDefined();
+    expect(q('foo', 2)).toBeUndefined();
+  });
+
   test('recursion', async () => {
     const q = await polar('foo(a) if a = 0 or (a = [0, b] and foo(b));');
     expect(q('foo', [1])).toBeUndefined();
