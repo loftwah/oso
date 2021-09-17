@@ -79,7 +79,7 @@ impl Compile<JS> for Operation {
             Operator::Not =>
                 format!("(s=>({})(Object.assign({{}},s))===undefined?s:undefined)", self.args[0].compile().0),
             Operator::Dot =>
-                format!("join({},(s=>walk({})(s)[{}]))", self.args[2].compile().0, self.args[0].compile().0, self.args[1].compile().0),
+                format!("(s=>join({},walk({})(s)[{}])(s))", self.args[2].compile().0, self.args[0].compile().0, self.args[1].compile().0),
             Operator::Isa =>
                 format!("(s=>is(walk({})(s),{})?s:undefined)", self.args[0].compile().0, self.args[1].compile().0),
             _ => unimplemented!("don't know how to compile {:?}", self)
@@ -104,8 +104,9 @@ impl Compile<JS> for Term {
 
 impl Compile<JS> for Rule {
     fn compile(&self) -> JS {
-        let params: Vec<_> = {
-            let mut a = self.params.iter().map(|p| p.parameter.value().as_symbol().unwrap().clone().clone()).collect::<Vec<_>>();
+        let formal_params = self.params.iter().map(|p| p.parameter.value().as_symbol().unwrap().clone().clone()).collect::<Vec<_>>();
+        let all_vars: Vec<_> = {
+            let mut a = formal_params.clone();
             for v in self.body.value().as_expression().unwrap().variables() {
                 if a.iter().find(|x| **x == v).is_none() {
                     a.push(v)
@@ -113,17 +114,16 @@ impl Compile<JS> for Rule {
             }
             a.into_iter().map(|p| p.compile().0).collect()
         };
-        eprintln!("params {:?}", params);
-        let params1 = params.join(",");
-        let params2 = params.iter()
+        let params1 = all_vars.join(",");
+        let params2 = formal_params.iter()
             .map(|p| format!("_{}", p))
             .collect::<Vec<_>>()
             .join(",");
-        let body = params.iter()
+        let body = formal_params.iter()
             .map(|nom|
                 format!("join({},_{})", nom, nom))
             .fold(self.body.compile().0, |m, i| format!("conj({},{})", i, m));
-        let vars = params.iter()
+        let vars = all_vars.iter()
             .map(|_| "(new Var())".to_owned())
             .collect::<Vec<_>>()
             .join(",");

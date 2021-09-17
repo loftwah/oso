@@ -103,7 +103,6 @@ export class Polar {
 
   compile() {
     const js = this.#ffiPolar.compileJs();
-//    console.log(js);
     return eval(js);
   }
 
