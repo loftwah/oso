@@ -66,7 +66,7 @@ describe('#compile', () => {
     expect(q('foo')).toBeUndefined();
   });
 
-  test('equals', async () => {
+  test('eq/2', async () => {
     const q = await polar('foo(a, b) if a = b;');
     expect(q('foo', new Var(), new Var())).toBeDefined();
     expect(q('foo', new Var(), 1)).toBeDefined();
@@ -95,13 +95,7 @@ describe('#compile', () => {
     expect(q('foo', 2, {a: 1})).toBeUndefined();
   });
 
-  test('a contradiction', async () => {
-    const q = await polar('foo(x, y) if x = y and x != y;');
-    expect(q('foo', 1, 1)).toBeUndefined();
-    expect(q('foo', 1, 2)).toBeUndefined();
-  });
-
-  test('not equals', async () => {
+  test('neq/2', async () => {
     const q = await polar('foo(a, b) if a != b;');
     expect(q('foo', 1, 1)).toBeUndefined();
     expect(q('foo', 1, 2)).toBeDefined();
@@ -110,6 +104,27 @@ describe('#compile', () => {
     expect(q('foo', NaN, NaN)).toBeDefined();
   });
 
+  test('never/2', async () => {
+    const q = await polar('foo(x, y) if x = y and x != y;');
+    expect(q('foo', 1, 1)).toBeUndefined();
+    expect(q('foo', 1, 2)).toBeUndefined();
+  });
+
+  test('always/1', async () => {
+    const q = await polar('foo(_);');
+    expect(q('foo', 1)).toBeDefined();
+    expect(q('foo', 'qwer')).toBeDefined();
+  });
+
+  test('isa/2', async() => {
+    const q = await polar('foo(x) if x matches Dictionary; bar(x) if x matches Number;');
+    expect(q('foo', {})).toBeDefined();
+    expect(q('foo', 1)).toBeUndefined();
+    expect(q('bar', 1)).toBeDefined();
+    expect(q('bar', ['asdf'])).toBeUndefined();
+  });
+
+  /*
   test('it can read fields on js objects', async () => {
     const p = new Polar();
     await p.loadStr('foo(a) if a.a = 1;');
@@ -119,6 +134,7 @@ describe('#compile', () => {
     expect(query('foo', {a: 2})).toBeUndefined();
     expect(query('foo', {b: 1})).toBeUndefined();
   });
+  */
 });
 
 describe('#registerClass', () => {

@@ -102,7 +102,8 @@ export class Polar {
   }
 
   compile() {
-    return eval(this.#ffiPolar.compileJs());
+    const js = this.#ffiPolar.compileJs();
+    return eval(js);
   }
 
   /**
@@ -171,10 +172,12 @@ export class Polar {
    * https://docs.osohq.com/project/changelogs/2021-09-15.html
    */
   async loadFile(filename: string): Promise<void> {
+    /*
     console.error(
       '`Oso.loadFile` has been deprecated in favor of `Oso.loadFiles` as of the 0.20 release.\n\n' +
         'Please see changelog for migration instructions: https://docs.osohq.com/project/changelogs/2021-09-15.html'
     );
+    */
     return this.loadFiles([filename]);
   }
 
@@ -363,15 +366,17 @@ export class Var {
   tag: string | undefined;
   constructor(tag?: string) {
     this.id = varCounter++;
-    this.tag = tag;
+    this.tag = tag || '';
   }
   reify = () => `_${this.tag}_${this.id}`;
 }
 
 const
-  nah = (_: any) => undefined,
-  yes = (x: any) => x,
-  is = (x: any, y: any) => x instanceof y,
+  List = Array,
+  Dictionary = Object,
+  Float = Number,
+  Integer = Number,
+  is = (x: any, y: any) => x instanceof y || y instanceof Function && typeof x === y.name.toLowerCase(),
   assign = (a: any, b: any) => (s: any) => (s[a.reify()] = b, s),
   walk = (u: any) => (s: any): any => is(u, Var) && u.reify() in s ? walk(s[u.reify()])(s) : u,
   conj = (a: any, b: any) => (s: any) => a(s) && b(s),

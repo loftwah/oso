@@ -53,6 +53,15 @@ impl Compile<JS> for Call {
     }
 }
 
+impl Compile<JS> for Pattern {
+    fn compile(&self) -> JS {
+        match self {
+            Self::Dictionary(d) => d.compile(),
+            Self::Instance(i) => i.tag.compile(),
+        }
+    }
+}
+
 impl Compile<JS> for Operation {
     fn compile(&self) -> JS {
         JS(match self.operator {
@@ -60,19 +69,20 @@ impl Compile<JS> for Operation {
                 format!("join({},{})", self.args[0].compile().0, self.args[1].compile().0),
             Operator::Neq =>
                 format!("split({},{})", self.args[0].compile().0, self.args[1].compile().0),
-            Operator::And if self.args.len() == 0 => "true".to_owned(),
+            Operator::And if self.args.len() == 0 => "(x=>x)".to_owned(),
             Operator::And => {
                 let args = self.args.iter().rev().map(|x| x.compile().0);
                 args.reduce(|m, i| format!("conj({},{})", i, m)).unwrap()
             }
-            Operator::Or if self.args.len() == 0 => "false".to_owned(),
+            Operator::Or if self.args.len() == 0 => "(_=>undefined)".to_owned(),
             Operator::Or  => {
                 let args = self.args.iter().rev().map(|x| x.compile().0);
                 args.reduce(|m, i| format!("disj({},{})", i, m)).unwrap()
             }
             Operator::Dot =>
-                format!("{}[{}]", self.args[0].compile().0, self.args[1].compile().0),
-            Operator::Isa => todo!(),
+                format!("(s=>walk({})(s)[walk({})(s)])", self.args[0].compile().0, self.args[1].compile().0),
+            Operator::Isa =>
+                format!("(s=>is(walk({})(s),{})?s:undefined)", self.args[0].compile().0, self.args[1].compile().0),
             _ => unimplemented!("don't know how to compile {:?}", self)
         })
     }
@@ -110,7 +120,7 @@ impl Compile<JS> for Rule {
             })
             .fold(self.body.compile().0, |m, i| format!("conj({},{})", i, m));
         let vars = self.params.iter()
-            .map(|_| "fresh()".to_owned())
+            .map(|_| "(new Var())".to_owned())
             .collect::<Vec<_>>()
             .join(",");
         JS(format!("(({})=>(({})=>{})({}))", params2, params1, body, vars))
@@ -149,6 +159,7 @@ impl Compile<JS> for Value {
             Self::Variable(s) => s.compile(),
             Self::Call(c) => c.compile(),
             Self::Expression(x) => x.compile(),
+            Self::Pattern(p) => p.compile(),
             _ => unimplemented!("don't know how to compile {:?}", self)
         }
     }
@@ -215,7 +226,7 @@ mod tests {
             source_info: SourceInfo::Test,
         };
 
-        assert_eq!(rule.compile().0, "((_a,_b)=>((a,b)=>conj(join(a,_a),conj(join(b,_b),conj(join(a,1),join(b,a)))))(fresh(),fresh()))".to_owned())
+        assert_eq!(rule.compile().0, "((_a,_b)=>((a,b)=>conj(join(a,_a),conj(join(b,_b),conj(join(a,1),join(b,a)))))(new Var(),new Var()))".to_owned())
     }
 
     #[test]
