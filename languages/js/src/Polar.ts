@@ -371,43 +371,61 @@ export class Var {
   reify = () => `_${this.tag}_${this.id}`;
 }
 
-const
-  List = Array,
+type In = obj;
+type Out = In | undefined;
+const List = Array,
   Dictionary = Object,
   Float = Number,
   Integer = Number,
-  is = (x: any, y: any) => x instanceof y || y instanceof Function && typeof x === y.name.toLowerCase(),
-  assign = (a: any, b: any) => (s: any) => (s[a.reify()] = b, s),
-  walk = (u: any) => (s: any): any => is(u, Var) && u.reify() in s ? walk(s[u.reify()])(s) : u,
-  conj = (a: any, b: any) => (s: any) => a(s) && b(s),
-  disj = (a: any, b: any) => (s: any) => a(Object.assign({}, s)) || b(s),
-  join = (a: any, b: any) => (s: any): any => {
-    const joinObj = (a: any, b: any) => joinAry(Object.entries(a), Object.entries(b)),
-          joinAry = (a: any, b: any) => {
-            if (a.length != b.length) return undefined;
-            for (const i in a) {
-              s = join(a[i], b[i])(s);
-              if (!s) break;
-            }
-            return s;
-          };
-    a = walk(a)(s), b = walk(b)(s);
-    if (a == b)                         return s;
-    if (is(a, Var))                     return assign(a, b)(s);
-    if (is(b, Var))                     return assign(b, a)(s);
-    if (is(a, Array) && is(b, Array))   return joinAry(a, b);
-    if (is(a, Object) && is(b, Object)) return joinObj(a, b);
-    return undefined;
-  },
-  split = (a: any, b: any) => (s: any): any => {
-    const splitObj = (a: any, b: any) => splitAry(Object.entries(a), Object.entries(b)),
-          splitAry = (a: any, b: any) => {
-            if (a.length != b.length) return s;
-            for (const i in a) if (split(a[i], b[i])(s)) return s;
-            return undefined;
-          };
-    a = walk(a)(s), b = walk(b)(s);
-    if (is(a, Array) && is(b, Array))   return splitAry(a, b);
-    if (is(a, Object) && is(b, Object)) return splitObj(a, b);
-    return a !== b ? s : undefined;
-  };
+  is = (x: any, y: any) =>
+    x instanceof y ||
+    (y instanceof Function && typeof x === y.name.toLowerCase()),
+  assign =
+    (a: any, b: any) =>
+    (s: In): Out =>
+      (s[a.reify()] = b), s,
+  walk =
+    (u: any) =>
+    (s: In): Out =>
+      is(u, Var) && u.reify() in s ? walk(s[u.reify()])(s) : u,
+  conj =
+    (a: any, b: any) =>
+    (s: In): Out =>
+      a(s) && b(s),
+  disj =
+    (a: any, b: any) =>
+    (s: In): Out =>
+      a(Object.assign({}, s)) || b(s),
+  join =
+    (a: any, b: any) =>
+    (s: In): Out => {
+      const joinObj = (a: any, b: any) =>
+          joinAry(Object.entries(a), Object.entries(b)),
+        joinAry = (a: any, b: any) => {
+          if (a.length != b.length) return undefined;
+          for (const i in a) if (!(s = join(a[i], b[i])(s)!)) break;
+          return s;
+        };
+      (a = walk(a)(s)), (b = walk(b)(s));
+      if (a == b) return s;
+      if (is(a, Var)) return assign(a, b)(s);
+      if (is(b, Var)) return assign(b, a)(s);
+      if (is(a, Array) && is(b, Array)) return joinAry(a, b);
+      if (is(a, Object) && is(b, Object)) return joinObj(a, b);
+      return undefined;
+    },
+  split =
+    (a: any, b: any) =>
+    (s: In): Out => {
+      const splitObj = (a: any, b: any) =>
+          splitAry(Object.entries(a), Object.entries(b)),
+        splitAry = (a: any, b: any) => {
+          if (a.length != b.length) return s;
+          for (const i in a) if (split(a[i], b[i])(s)) return s;
+          return undefined;
+        };
+      (a = walk(a)(s)), (b = walk(b)(s));
+      if (is(a, Array) && is(b, Array)) return splitAry(a, b);
+      if (is(a, Object) && is(b, Object)) return splitObj(a, b);
+      return a !== b ? s : undefined;
+    };

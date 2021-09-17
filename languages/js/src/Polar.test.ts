@@ -57,8 +57,8 @@ describe('#compile', () => {
 
   test('objects', async () => {
     const q = await polar('foo(a, b) if {a: a} = b;');
-    expect(q('foo', 1, {a: 1})).toBeDefined();
-    expect(q('foo', 2, {a: 1})).toBeUndefined();
+    expect(q('foo', 1, { a: 1 })).toBeDefined();
+    expect(q('foo', 2, { a: 1 })).toBeUndefined();
   });
 
   test('it can read fields on js objects', async () => {
@@ -66,9 +66,9 @@ describe('#compile', () => {
     await p.loadStr('foo(a) if a.a = 1;');
     const query = p.compile();
     expect(query('foo', {})).toBeUndefined();
-    expect(query('foo', {a: 2})).toBeUndefined();
-    expect(query('foo', {b: 1})).toBeUndefined();
-    expect(query('foo', {a: 1})).toBeDefined();
+    expect(query('foo', { a: 2 })).toBeUndefined();
+    expect(query('foo', { b: 1 })).toBeUndefined();
+    expect(query('foo', { a: 1 })).toBeDefined();
   });
 
   test('recursion', async () => {
@@ -80,9 +80,10 @@ describe('#compile', () => {
     expect(q('foo', [[], [[], [[], [[], []]]]])).toBeDefined();
   });
 
-
   test('it works', async () => {
-    const q = await polar('foo(a, b) if a=1 and b=a; foo(a, b) if a=2 and b=3;');
+    const q = await polar(
+      'foo(a, b) if a=1 and b=a; foo(a, b) if a=2 and b=3;'
+    );
     expect(q('foo', new Var(), new Var())).toBeDefined();
     expect(q('foo', 1, new Var())).toBeDefined();
     expect(q('foo', 1, 2)).toBeUndefined();
@@ -93,7 +94,9 @@ describe('#compile', () => {
   });
 
   test('or', async () => {
-    const q = await polar('foo(a) if a = 1; foo(a) if a = 2; bar(x) if x = 1 or x = 2;');
+    const q = await polar(
+      'foo(a) if a = 1; foo(a) if a = 2; bar(x) if x = 1 or x = 2;'
+    );
     expect(q('foo', 1)).toBeDefined();
     expect(q('foo', 2)).toBeDefined();
     expect(q('foo', 3)).toBeUndefined();
@@ -113,10 +116,10 @@ describe('#compile', () => {
     expect(q('foo', [1], [new Var()])).toBeDefined();
     expect(q('foo', [1], [1])).toBeDefined();
     expect(q('foo', [1], [2])).toBeUndefined();
-    expect(q('foo', new Var(), {a: 1})).toBeDefined();
-    expect(q('foo', {a: 1}, {a: new Var()})).toBeDefined();
-    expect(q('foo', {a: 1}, {a: []})).toBeUndefined();
-    expect(q('foo', {a: 1}, {a: 1, b: 2})).toBeUndefined();
+    expect(q('foo', new Var(), { a: 1 })).toBeDefined();
+    expect(q('foo', { a: 1 }, { a: new Var() })).toBeDefined();
+    expect(q('foo', { a: 1 }, { a: [] })).toBeUndefined();
+    expect(q('foo', { a: 1 }, { a: 1, b: 2 })).toBeUndefined();
   });
 
   test('arrays', async () => {
@@ -126,7 +129,9 @@ describe('#compile', () => {
   });
 
   test('calls', async () => {
-    const q = await polar('foo(a) if a=1 or a=2; bar(a) if foo(a) or a matches List;');
+    const q = await polar(
+      'foo(a) if a=1 or a=2; bar(a) if foo(a) or a matches List;'
+    );
     expect(q('foo', 1)).toBeDefined();
     expect(q('foo', 2)).toBeDefined();
     expect(q('foo', 3)).toBeUndefined();
@@ -137,12 +142,13 @@ describe('#compile', () => {
     expect(q('bar', 3)).toBeUndefined();
     expect(q('bar', [1, 2])).toBeDefined();
   });
+
   test('neq/2', async () => {
     const q = await polar('foo(a, b) if a != b;');
     expect(q('foo', 1, 1)).toBeUndefined();
     expect(q('foo', 1, 2)).toBeDefined();
-    expect(q('foo', [[3], {num: 4}], [[3], {num: 4}])).toBeUndefined();
-    expect(q('foo', [[3], {num: 4}], [[2], {num: 3}])).toBeDefined();
+    expect(q('foo', [[3], { num: 4 }], [[3], { num: 4 }])).toBeUndefined();
+    expect(q('foo', [[3], { num: 4 }], [[2], { num: 3 }])).toBeDefined();
     expect(q('foo', NaN, NaN)).toBeDefined();
   });
 
@@ -159,7 +165,9 @@ describe('#compile', () => {
   });
 
   test('isa/2', async () => {
-    const q = await polar('foo(x) if x matches Dictionary; bar(x) if x matches Number;');
+    const q = await polar(
+      'foo(x) if x matches Dictionary; bar(x) if x matches Number;'
+    );
     expect(q('foo', {})).toBeDefined();
     expect(q('foo', 1)).toBeUndefined();
     expect(q('bar', 1)).toBeDefined();
@@ -173,7 +181,6 @@ describe('#compile', () => {
     expect(q('bar', 1, 2)).toBeUndefined();
     expect(q('bar', 1, 1)).toBeDefined();
   });
-
 });
 
 describe('#registerClass', () => {
