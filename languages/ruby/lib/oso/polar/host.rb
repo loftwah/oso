@@ -52,7 +52,7 @@ module Oso
 
     # Translate between Polar and the host language (Ruby).
     class Host # rubocop:disable Metrics/ClassLength
-      # @return [Hash<String, Class>]
+      # @return [Hash<String, UserType>]
       attr_reader :types
 
       protected
@@ -112,6 +112,16 @@ module Oso
           build_query: build_query
         )
         name
+      end
+
+      def register_mros # rubocop:disable Metrics/AbcSize
+        types.values.uniq.each do |typ|
+          mro = []
+          typ.klass.get.ancestors.each do |a|
+            mro.push(types[a].id) if types.key?(a)
+          end
+          ffi_polar.register_mro(typ.name, mro)
+        end
       end
 
       # Check if an instance exists in the {#instances} cache.
@@ -185,7 +195,7 @@ module Oso
 
       # Compare two values
       #
-      # @param op [String] operation to perform.
+      # @param operation [String] operation to perform.
       # @param args [Array<Object>] left and right args to operation.
       # @raise [PolarRuntimeError] if operation fails or is unsupported.
       # @return [Boolean]
@@ -238,9 +248,9 @@ module Oso
           field_types = {}
           fields.each do |k, v|
             field_types[k] =
-              if v.is_a? ::Oso::Polar::DataFiltering::Relationship
+              if v.is_a? ::Oso::Polar::DataFiltering::Relation
                 {
-                  'Relationship' => {
+                  'Relation' => {
                     'kind' => v.kind,
                     'other_class_tag' => v.other_type,
                     'my_field' => v.my_field,
@@ -297,7 +307,9 @@ module Oso
                     { 'Pattern' => { 'Instance' => { 'tag' => value.tag, 'fields' => dict['Dictionary'] } } }
                   end
                 else
-                  { 'ExternalInstance' => { 'instance_id' => cache_instance(value), 'repr' => nil } }
+                  instance_id = nil
+                  instance_id = types[value].id if value.is_a?(Class) && types.key?(value)
+                  { 'ExternalInstance' => { 'instance_id' => cache_instance(value, id: instance_id), 'repr' => nil } }
                 end
         { 'value' => value }
       end

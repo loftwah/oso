@@ -89,10 +89,33 @@ public class Host implements Cloneable {
       throw new Exceptions.DuplicateClassAliasError(
           name, types.get(name).cls.getName(), cls.getName());
     }
-    UserType type = new UserType(name, cls, fields, buildQuery, execQuery, combineQuery);
+    UserType type = new UserType(name, cls, fields, buildQuery, execQuery, combineQuery, cacheInstance(cls, null));
     types.put(name, type);
     types.put(cls, type);
     return type;
+  }
+
+  public UserType cacheClass(Class<?> cls, String name)
+      throws Exceptions.DuplicateClassAliasError {
+      return cacheClass(cls, name, new HashMap());
+  }
+
+  /**
+   * Register a list of base classes (MRO list) for all registered classes. The list is in method
+   * resolution order (MRO), meaning the superclasses are ordered from most to least specific.
+   */
+  public void registerMros() {
+
+    for (Map.Entry<Object, UserType> ent : types.entrySet()) {
+      UserType typ = types.get(ent.getValue().cls.getSuperclass());
+      List<Long> mro = new ArrayList<Long>();
+      while (typ != null) {
+        Long id = typ.id;
+        if (id != null) mro.add(id);
+        typ = types.get(typ.cls.getSuperclass());
+      }
+      ffiPolar.registerMro(ent.getValue().name, mro.toString());
+    }
   }
 
   /** Get a cached Java instance. */
@@ -281,7 +304,14 @@ public class Host implements Cloneable {
       }
     } else {
       JSONObject attrs = new JSONObject();
-      attrs.put("instance_id", cacheInstance(value, null));
+      Long instanceId = null;
+
+      // if the object is a Class, then it will already have an instance ID
+      if (value instanceof Class) {
+        instanceId = types.get(value).id;
+      }
+
+      attrs.put("instance_id", cacheInstance(value, instanceId));
       attrs.put("repr", value == null ? "null" : value.toString());
       jVal.put("ExternalInstance", attrs);
     }
@@ -482,6 +512,7 @@ public class Host implements Cloneable {
     public Function<List<FilterPlan.Constraint>, Object> buildQuery;
     public Function<Object, List<Object>> execQuery;
     public BiFunction<Object, Object, Object> combineQuery;
+    public Long id;
 
     public UserType(
         String name,
@@ -489,13 +520,15 @@ public class Host implements Cloneable {
         Map<String, TypeSpec> fields,
         Function<List<FilterPlan.Constraint>, Object> buildQuery,
         Function<Object, List<Object>> execQuery,
-        BiFunction<Object, Object, Object> combineQuery) {
+        BiFunction<Object, Object, Object> combineQuery,
+        Long id) {
       this.name = name;
       this.cls = cls;
       this.fields = fields;
       this.buildQuery = buildQuery;
       this.execQuery = execQuery;
       this.combineQuery = combineQuery;
+      this.id = id;
     }
 
     public JSONObject serialize() {

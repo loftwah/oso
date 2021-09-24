@@ -1,4 +1,4 @@
-use polar_core::{polar, terms::Symbol};
+use polar_core::{polar, sources::Source, terms::Symbol};
 use wasm_bindgen::prelude::*;
 
 use crate::errors::{serde_serialization_error, serialization_error, Error};
@@ -17,31 +17,12 @@ impl Polar {
     }
 
     #[wasm_bindgen(js_class = Polar, js_name = load)]
-    pub fn wasm_load(&self, src: &str, filename: Option<String>) -> JsResult<()> {
+    pub fn wasm_load(&self, sources: JsValue) -> JsResult<()> {
+        let sources: Vec<Source> = serde_wasm_bindgen::from_value(sources)?;
         self.0
-            .load(src, filename)
+            .load(sources)
             .map_err(Error::from)
             .map_err(Error::into)
-    }
-
-    #[wasm_bindgen(js_class = Polar, js_name = enableRoles)]
-    pub fn wasm_enable_roles(&self) -> JsResult<()> {
-        self.0
-            .enable_roles()
-            .map_err(Error::from)
-            .map_err(Error::into)
-    }
-
-    #[wasm_bindgen(js_class = Polar, js_name = validateRolesConfig)]
-    pub fn wasm_validate_roles_config(&self, validation_query_results: &str) -> JsResult<()> {
-        serde_json::from_str(validation_query_results)
-            .map_err(serde_serialization_error)
-            .and_then(|term| {
-                self.0
-                    .validate_roles_config(term)
-                    .map_err(Error::from)
-                    .map_err(Error::into)
-            })
     }
 
     #[wasm_bindgen(js_class = Polar, js_name = clearRules)]
@@ -52,10 +33,12 @@ impl Polar {
     #[wasm_bindgen(js_class = Polar, js_name = registerConstant)]
     pub fn wasm_register_constant(&mut self, name: &str, value: &str) -> JsResult<()> {
         match serde_json::from_str(value) {
-            Ok(term) => self.0.register_constant(Symbol::new(name), term),
-            Err(e) => return Err(serde_serialization_error(e)),
+            Ok(term) => Ok(self
+                .0
+                .register_constant(Symbol::new(name), term)
+                .map_err(Error::from)?),
+            Err(e) => Err(serde_serialization_error(e)),
         }
-        Ok(())
     }
 
     #[wasm_bindgen(js_class = Polar, js_name = nextInlineQuery)]
@@ -88,6 +71,15 @@ impl Polar {
     pub fn wasm_next_message(&self) -> JsResult<JsValue> {
         let message = self.0.next_message();
         serde_wasm_bindgen::to_value(&message).map_err(|e| serialization_error(e.to_string()))
+    }
+
+    #[wasm_bindgen(js_class = Polar, js_name = registerMro)]
+    pub fn wasm_register_mro(&self, name: &str, mro: JsValue) -> JsResult<()> {
+        let mro = serde_wasm_bindgen::from_value(mro)?;
+        self.0
+            .register_mro(Symbol::new(name), mro)
+            .map_err(Error::from)
+            .map_err(Error::into)
     }
 
     #[wasm_bindgen(js_class = Polar, js_name = buildFilterPlan)]

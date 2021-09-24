@@ -971,6 +971,20 @@ impl PolarVirtualMachine {
                 unreachable!("encountered bare expression")
             }
 
+            _ if self.kb.read().unwrap().is_union(left) => {
+                // A union (currently) only matches itself.
+                //
+                // TODO(gj): when we have unions beyond `Actor` and `Resource`, we'll need to be
+                // smarter about this check since UnionA is more specific than UnionB if UnionA is
+                // a member of UnionB.
+                let unions_match = (left.is_actor_union() && right.is_actor_union())
+                    || (left.is_resource_union() && right.is_resource_union());
+                if !unions_match {
+                    return self.push_goal(Goal::Backtrack);
+                }
+            }
+            _ if self.kb.read().unwrap().is_union(right) => self.isa_union(left, right)?,
+
             // TODO(gj): (Var, Rest) + (Rest, Var) cases might be unreachable.
             (Value::Variable(l), Value::Variable(r))
             | (Value::Variable(l), Value::RestVariable(r))
@@ -986,7 +1000,7 @@ impl PolarVirtualMachine {
                         left: left.clone(),
                         right: y,
                     })?,
-                    (_, _) => self.add_constraint(&opn!(Isa, left.clone(), right.clone()))?,
+                    (_, _) => self.add_constraint(&Term::from(op!(Isa, left.clone(), right.clone())))?,
                 }
             }
             (Value::Variable(l), _) | (Value::RestVariable(l), _) => match self.variable_state(l) {
@@ -1125,7 +1139,7 @@ impl PolarVirtualMachine {
                     let value = self.deep_deref(value);
                     let field = right.clone_with_value(value!(field.0.as_ref()));
                     let left = left.clone_with_value(value!(op!(Dot, left.clone(), field)));
-                    opn!(Unify, left, value)
+                    term!(op!(Unify, left, value))
                 };
 
                 let constraints = fields.fields.iter().rev().map(to_unify).collect::<Vec<_>>();
@@ -1208,6 +1222,28 @@ impl PolarVirtualMachine {
             _ => self.add_constraint(&op!(Unify, left.clone(), right.clone()).into())?,
         }
         Ok(())
+    }
+
+    /// To evaluate `left matches Union`, look up `Union`'s member classes and create a choicepoint
+    /// to check if `left` matches any of them.
+    fn isa_union(&mut self, left: &Term, union: &Term) -> PolarResult<()> {
+        let member_isas = {
+            let kb = self.kb.read().unwrap();
+            let members = kb.get_union_members(union).iter();
+            members
+                .map(|member| {
+                    let tag = member.value().as_symbol().unwrap().0.as_str();
+                    member.clone_with_value(value!(pattern!(instance!(tag))))
+                })
+                .map(|pattern| {
+                    vec![Goal::Isa {
+                        left: left.clone(),
+                        right: pattern,
+                    }]
+                })
+                .collect::<Vec<Goals>>()
+        };
+        self.choose(member_isas)
     }
 
     pub fn lookup(&mut self, dict: &Dictionary, field: &Term, value: &Term) -> PolarResult<()> {
@@ -1420,7 +1456,7 @@ impl PolarVirtualMachine {
                         // apply a constraint to variable that it must be truthy
                         Goal::Unify {
                             left: term.clone(),
-                            right: true.into(),
+                            right: term!(true),
                         }
                     },
                 )?
@@ -1874,12 +1910,6 @@ impl PolarVirtualMachine {
             | Value::List(_)
             | Value::Number(_)
             | Value::String(_) => {
-                // handle partial arguments to an external call
-                if let Some(constraint_term) = self.check_partial_args(object, field, value)? {
-                    // if there is a valid partial argument, it means we have a special case handler, so don't call out to the method
-                    self.add_constraint(&constraint_term)?;
-                    return Ok(QueryEvent::None);
-                }
                 let answer = self.kb.read().unwrap().gensym("lookup_value");
                 let call_id = self.new_call_id(&answer);
                 self.append_goals(vec![
@@ -1922,151 +1952,6 @@ impl PolarVirtualMachine {
             }
         }
         Ok(QueryEvent::None)
-    }
-
-    /// Check for partially bound or unbound variable arguments to an external call.
-    /// If any arguments are partially bound or unbound, return an error.
-    /// The only exception is the method `OsoRoles.role_allows()`, which expects a partially bound resource argument.
-    /// If the call is `OsoRoles.role_allows()`, return a term representing a special constraint for the method call.
-    fn check_partial_args(
-        &self,
-        object: &Term,
-        field: &Term,
-        value: &Term,
-    ) -> PolarResult<Option<Term>> {
-        // If the lookup is a `Value::Call`, then we need to check for partial args
-        let (name, args, maybe_kwargs): (Symbol, Vec<Term>, Option<BTreeMap<Symbol, Term>>) =
-            match self.deep_deref(field).value() {
-                Value::Call(Call { name, args, kwargs }) => (
-                    name.clone(),
-                    args.iter().map(|arg| self.deep_deref(arg)).collect(),
-                    kwargs.as_ref().map(|unwrapped| {
-                        unwrapped
-                            .iter()
-                            .map(|(k, v)| (k.to_owned(), self.deep_deref(v)))
-                            .collect()
-                    }),
-                ),
-                _ => return Ok(None),
-            };
-
-        // get all partially-bound args
-        let partial_args = args
-            .iter()
-            .enumerate()
-            .filter_map(|(i, arg)| {
-                if let Value::Variable(v) = arg.value() {
-                    match self.binding_manager.variable_state(v) {
-                        // bound variables are fine, continue
-                        VariableState::Bound(_) => None,
-                        // TODO: temporary fix so that partial variables are only fine if being passed into "role_allows"
-                        VariableState::Partial => Some(Ok((i, arg))),
-                        VariableState::Unbound => Some(Err(self.set_error_context(
-                            field,
-                            error::RuntimeError::Unsupported {
-                                msg: format!(
-                                    "cannot call method {} with unbound variable argument {}",
-                                    name, v
-                                ),
-                            },
-                        ))),
-                    }
-                } else {
-                    None
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        // get all partially-bound kwargs
-        let partial_kwargs = maybe_kwargs
-                .clone()
-                .map(|kwargs| {
-                    kwargs
-                        .iter()
-                        .filter_map(|(key, arg)| {
-                            if let Value::Variable(v) = arg.value() {
-                                match self.binding_manager.variable_state(v) {
-                                    // bound variables are fine, continue
-                                    VariableState::Bound(_) => None,
-                                    // TODO: temporary fix so that partial variables are only fine if being passed into "role_allows"
-                                    VariableState::Partial => Some(Ok((key.clone(), arg.clone()))),
-                                    VariableState::Unbound => Some(Err(self.set_error_context(
-                                        field,
-                                        error::RuntimeError::Unsupported {
-                                            msg: format!(
-                                                "cannot call method {} with unbound variable argument {}", name, v
-                                            ),
-                                        },
-                                    ))),
-                                }
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()
-                })
-                .transpose()?.unwrap_or_else(Vec::new);
-
-        // If there are no partial args or kwargs, return
-        if partial_args.len() + partial_kwargs.len() == 0 {
-            return Ok(None);
-        }
-
-        // TODO: temprorary fix--If there are partial args, they must be called on `role_allows` or `actor_can_assume_role`
-        if let Value::ExternalInstance(external) = self.deep_deref(object).value() {
-            if let Some(repr) = external.repr.clone() {
-                if repr.contains("sqlalchemy_oso.roles.OsoRoles")
-                    && (name.0 == "role_allows" || name.0 == "actor_can_assume_role")
-                {
-                    if partial_args.len() + partial_kwargs.len() > 1 {
-                        // More than 1 partial arg results in error
-                        return Err(self.set_error_context(
-                                        field,
-                                        error::RuntimeError::Unsupported {
-                                            msg: format!("Cannot call method {} with more than 1 partially bound argument.", name.0
-                                            ),
-                                        }));
-                    } else if partial_args.len() == 1 && partial_args[0].0 != 2 {
-                        // Non-resource partial arg results in error
-                        return Err(self.set_error_context(
-                                        field,
-                                        error::RuntimeError::Unsupported {
-                                            msg: format!("Cannot call method {} with partially bound argument at index {}.", name.0, partial_args[0].0
-                                            ),
-                                        }));
-                    } else if partial_kwargs.len() == 1 && partial_kwargs[0].0 != sym!("resource") {
-                        return Err(self.set_error_context(
-                                        field,
-                                        error::RuntimeError::Unsupported {
-                                            msg: format!("Cannot call method {} with partially bound argument with keyword {}.", name.0, partial_kwargs[0].0
-                                            ),
-                                        }));
-                    }
-                    let dot = opn!(
-                        Dot,
-                        object.clone(),
-                        Call {
-                            name,
-                            args,
-                            kwargs: maybe_kwargs
-                        }
-                        .into()
-                    );
-                    let constraint_term = opn!(Unify, value.clone(), dot);
-                    return Ok(Some(constraint_term));
-                }
-            }
-        }
-        // If the call wasn't to one of the specially-allowed methods, throw an error
-        Err(self.set_error_context(
-            field,
-            error::RuntimeError::Unsupported {
-                msg: format!(
-                    "cannot call method {} with partially-bound arguments.",
-                    name,
-                ),
-            },
-        ))
     }
 
     fn in_op_helper(&mut self, term: &Term) -> PolarResult<QueryEvent> {
@@ -2648,6 +2533,25 @@ impl PolarVirtualMachine {
         let zipped = left.params.iter().zip(right.params.iter()).zip(args.iter());
         for ((left_param, right_param), arg) in zipped {
             match (&left_param.specializer, &right_param.specializer) {
+                // If both specs are unions, they have the same specificity regardless of whether
+                // they're the same or different unions.
+                //
+                // TODO(gj): when we have unions beyond `Actor` and `Resource`, we'll need to be
+                // smarter about this check since UnionA is more specific than UnionB if UnionA is
+                // a member of UnionB.
+                (Some(left_spec), Some(right_spec))
+                    if self.kb.read().unwrap().is_union(left_spec)
+                        && self.kb.read().unwrap().is_union(right_spec) => {}
+                // If left is a union and right is not, left cannot be more specific, so we
+                // backtrack.
+                (Some(left_spec), Some(_)) if self.kb.read().unwrap().is_union(left_spec) => {
+                    return self.push_goal(Goal::Backtrack)
+                }
+                // If right is a union and left is not, left IS more specific, so we return.
+                (Some(_), Some(right_spec)) if self.kb.read().unwrap().is_union(right_spec) => {
+                    return Ok(())
+                }
+
                 (Some(left_spec), Some(right_spec)) => {
                     // If you find two non-equal specializers, that comparison determines the relative
                     // specificity of the two rules completely. As soon as you have two specializers
@@ -2785,28 +2689,7 @@ impl PolarVirtualMachine {
     }
 
     pub fn rule_source(&self, rule: &Rule) -> String {
-        let head = format!(
-            "{}({})",
-            rule.name,
-            rule.params.iter().fold(String::new(), |mut acc, p| {
-                if !acc.is_empty() {
-                    acc += ", ";
-                }
-                acc += &self.term_source(&p.parameter, false);
-                if let Some(spec) = &p.specializer {
-                    acc += ": ";
-                    acc += &self.term_source(spec, false);
-                }
-                acc
-            })
-        );
-        match rule.body.value() {
-            Value::Expression(Operation {
-                operator: Operator::And,
-                args,
-            }) if !args.is_empty() => head + " if " + &self.term_source(&rule.body, false) + ";",
-            _ => head + ";",
-        }
+        rule.to_polar()
     }
 
     fn set_error_context(
@@ -3019,7 +2902,7 @@ mod tests {
         };
         ($($term:expr),+) => {
             Goal::Query {
-                term: opn!(And, $($term),+)
+                term: term!(op!(And, $($term),+))
             }
         };
     }
@@ -3902,134 +3785,5 @@ mod tests {
             QueryEvent::Debug { message } if &message[..] == "consequent" && vm.bindings(true).is_empty() && vm.is_halted(),
             QueryEvent::Done { result: true }
         ]);
-    }
-
-    #[test]
-    fn test_check_partial_args() {
-        let mut vm = PolarVirtualMachine::new_test(
-            Arc::new(RwLock::new(KnowledgeBase::new())),
-            false,
-            vec![],
-        );
-
-        // Test with valid args
-        let object = term!(Value::ExternalInstance(ExternalInstance {
-            instance_id: 1,
-            constructor: None,
-            repr: Some(String::from("sqlalchemy_oso.roles.OsoRoles"))
-        }));
-        let value = term!(sym!("result"));
-        let resource_var = term!(sym!("resource"));
-        vm.add_constraint(&term!(op!(
-            Isa,
-            resource_var.clone(),
-            term!(pattern!(instance!("Repository")))
-        )))
-        .unwrap();
-        let actor_var = sym!("actor");
-        vm.bind(&actor_var, term!(value!("Leina"))).unwrap();
-        let action_var = sym!("action");
-        vm.bind(&action_var, term!(value!("read"))).unwrap();
-        let args = vec![
-            term!(actor_var.clone()),
-            term!(action_var.clone()),
-            resource_var.clone(),
-        ];
-        let role_allows_call = term!(Call {
-            name: sym!("role_allows"),
-            args: args.clone(),
-            kwargs: None
-        });
-        let actor_can_assume_role_call = term!(Call {
-            name: sym!("actor_can_assume_role"),
-            args: args.clone(),
-            kwargs: None
-        });
-        let role_allows_constraint_term = term!(op!(
-            Unify,
-            value.clone(),
-            term!(op!(
-                Dot,
-                object.clone(),
-                term!(Call {
-                    name: sym!("role_allows"),
-                    args: vec![
-                        term!(value!("Leina")),
-                        term!(value!("read")),
-                        resource_var.clone()
-                    ],
-                    kwargs: None
-                })
-            ))
-        ));
-        let actor_can_assume_role_constraint_term = term!(op!(
-            Unify,
-            value.clone(),
-            term!(op!(
-                Dot,
-                object.clone(),
-                term!(Call {
-                    name: sym!("actor_can_assume_role"),
-                    args: vec![
-                        term!(value!("Leina")),
-                        term!(value!("read")),
-                        resource_var.clone()
-                    ],
-                    kwargs: None
-                })
-            ))
-        ));
-
-        // Test role_allows
-        let res_val = vm
-            .check_partial_args(&object, &role_allows_call, &value)
-            .unwrap()
-            .unwrap();
-        assert_eq!(res_val, role_allows_constraint_term);
-        // Test adding the actual constraint
-        vm.add_constraint(&res_val).unwrap();
-
-        // Test actor_can_assume_role
-        let res_val = vm
-            .check_partial_args(&object, &actor_can_assume_role_call, &value)
-            .unwrap()
-            .unwrap();
-        assert_eq!(res_val, actor_can_assume_role_constraint_term);
-        // Test adding the actual constraint
-        vm.add_constraint(&res_val).unwrap();
-
-        // Test on invalid instance
-        let bad_object = term!(Value::ExternalInstance(ExternalInstance {
-            instance_id: 1,
-            constructor: None,
-            repr: Some(String::from("sqlalchemy_oso.roles.FakeRoles"))
-        }));
-        assert!(vm
-            .check_partial_args(&bad_object, &role_allows_call, &value)
-            .is_err());
-
-        // Test with invalid method name
-        let bad_method_name = term!(Call {
-            name: sym!("bad_method"),
-            args,
-            kwargs: None
-        });
-        // TODO: check error messages are correct
-        assert!(vm
-            .check_partial_args(&object, &bad_method_name, &value)
-            .is_err());
-
-        // Test with invalid arg position
-        let bad_args = vec![term!(actor_var), resource_var, term!(action_var)];
-        let wrong_arg_order = term!(Call {
-            name: sym!("role_allows"),
-            args: bad_args,
-            kwargs: None
-        });
-        // TODO: check error messages are correct
-        assert!(vm
-            .check_partial_args(&object, &wrong_arg_order, &value)
-            .is_err());
-        // TODO: Test with kwargs
     }
 }

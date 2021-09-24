@@ -20,11 +20,11 @@ public class HostTest {
   @Test
   public void isSubclass() {
 
-    Map<String, Host.TypeSpec> empty = new HashMap();
-    Host host = new Host(null);
-    host.cacheClass(User.class, "User", empty);
-    host.cacheClass(UserSubclass.class, "UserSubclass", empty);
-    host.cacheClass(NotSubclass.class, "NotSubclass", empty);
+    Polar polar = new Polar();
+    Host host = polar.host;
+    host.cacheClass(User.class, "User");
+    host.cacheClass(UserSubclass.class, "UserSubclass");
+    host.cacheClass(NotSubclass.class, "NotSubclass");
 
     assertTrue(host.isSubclass("UserSubclass", "User"));
     assertTrue(host.isSubclass("UserSubclass", "UserSubclass"));

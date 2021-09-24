@@ -7,6 +7,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import jnr.ffi.LibraryLoader;
 import jnr.ffi.Pointer;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
@@ -28,22 +29,12 @@ public class Ffi {
       return ptr;
     }
 
-    protected int enableRoles() throws Exceptions.OsoException {
-      int result = polarLib.polar_enable_roles(ptr);
-      return checkResult(result);
-    }
-
-    protected int validateRolesConfig(String results) throws Exceptions.OsoException {
-      int result = polarLib.polar_validate_roles_config(ptr, results);
-      return checkResult(result);
-    }
-
     protected long newId() throws Exceptions.OsoException {
       return checkResult(polarLib.polar_get_external_id(ptr));
     }
 
-    protected int load(String src, String filename) throws Exceptions.OsoException {
-      int result = polarLib.polar_load(ptr, src, filename);
+    protected int load(JSONArray sources) throws Exceptions.OsoException {
+      int result = polarLib.polar_load(ptr, sources.toString());
       processMessages();
       return checkResult(result);
     }
@@ -89,6 +80,10 @@ public class Ffi {
 
     protected int registerConstant(String value, String name) throws Exceptions.OsoException {
       return checkResult(polarLib.polar_register_constant(ptr, name, value));
+    }
+
+    protected int registerMro(String name, String mro) throws Exceptions.OsoException {
+      return checkResult(polarLib.polar_register_mro(ptr, name, mro));
     }
 
     protected Pointer nextMessage() throws Exceptions.OsoException {
@@ -221,7 +216,7 @@ public class Ffi {
 
     long polar_get_external_id(Pointer polar_ptr);
 
-    int polar_load(Pointer polar_ptr, String src, String filename);
+    int polar_load(Pointer polar_ptr, String sources);
 
     int polar_clear_rules(Pointer polar_ptr);
 
@@ -249,6 +244,8 @@ public class Ffi {
 
     int polar_register_constant(Pointer polar_ptr, String name, String value);
 
+    int polar_register_mro(Pointer polar_ptr, String name, String mro);
+
     Pointer polar_next_polar_message(Pointer polar_ptr);
 
     Pointer polar_next_query_message(Pointer query_ptr);
@@ -256,10 +253,6 @@ public class Ffi {
     Pointer polar_query_source_info(Pointer query_ptr);
 
     int polar_bind(Pointer query_ptr, String name, String value);
-
-    int polar_enable_roles(Pointer polar_ptr);
-
-    int polar_validate_roles_config(Pointer polar_ptr, String results);
 
     String polar_build_filter_plan(
         Pointer polar_ptr, String types, String partials, String variable, String class_tag);

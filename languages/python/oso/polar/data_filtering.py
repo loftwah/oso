@@ -1,12 +1,12 @@
 from typing import Any, Optional
 from dataclasses import dataclass
 
-VALID_KINDS = ["parent", "children"]
-
 
 # Used so we know what fetchers to call and how to match up constraints.
 @dataclass
-class Relationship:
+class Relation:
+    """An object representing a relation between two types registered with Oso."""
+
     kind: str
     other_type: str
     my_field: str
@@ -25,9 +25,9 @@ def serialize_types(types, tmap):
         tag, fields = typ.name, typ.fields
         field_types = {}
         for k, v in fields.items():
-            if isinstance(v, Relationship):
+            if isinstance(v, Relation):
                 field_types[k] = {
-                    "Relationship": {
+                    "Relation": {
                         "kind": v.kind,
                         "other_class_tag": v.other_type,
                         "my_field": v.my_field,
@@ -56,8 +56,10 @@ class Ref:
 
 
 @dataclass
-class Constraint:
-    kind: str  # ["Eq", "In", "Contains"]
+class Filter:
+    """An object representing a predicate on a type registered with Oso."""
+
+    kind: str
     field: str
     value: Any
 
@@ -84,7 +86,7 @@ class Constraint:
         else:
             self.iget = lambda x: getattr(x, self.field)
 
-        self.checker = getattr(Constraint, self.kind)
+        self.checker = getattr(Filter, self.kind)
 
     def check(self, item):
         return self.checker(self.iget(item), self.getter(item))
@@ -117,7 +119,7 @@ def parse_constraint(polar, constraint):
     else:
         assert False, "Unknown value kind"
 
-    return Constraint(kind=kind, field=field, value=value)
+    return Filter(kind=kind, field=field, value=value)
 
 
 # @NOTE(Steve): This is just operating on the json. Could still have a step to parse this into a python data structure

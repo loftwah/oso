@@ -69,7 +69,7 @@ module Oso
 
           def self.parse(polar, parsed_json)
             constraints = parsed_json['constraints'].map do |con|
-              Constraint.parse polar, con
+              Filter.parse polar, con
             end
             class_tag = parsed_json['class_tag']
 
@@ -83,10 +83,15 @@ module Oso
         end
       end
 
-      # Represents relationships between resources, eg. parent/child
-      class Relationship
+      # Represents relationships between resources, eg. one-one or one-many
+      class Relation
         attr_reader :kind, :other_type, :my_field, :other_field
 
+        # Describe a Relation from one type to another.
+        # @param kind [String] The type of relation, either "one" or "many"
+        # @param other_type The name or class object of the related type
+        # @param my_field The field on this type that matches +other_type+
+        # @param other_field The field on +other_type+ that matches this type
         def initialize(kind:, other_type:, my_field:, other_field:)
           @kind = kind
           @other_type = other_type
@@ -115,7 +120,7 @@ module Oso
       end
 
       # Represents a condition that must hold on a resource.
-      class Constraint
+      class Filter
         attr_reader :kind, :field, :value
 
         CHECKS = {
@@ -125,6 +130,10 @@ module Oso
           'Contains' => ->(a, b) { a.include? b }
         }.freeze
 
+        # Create a new predicate for data filtering.
+        # @param kind [String] Represents a condition. One of "Eq", "Neq", "In", "Contains".
+        # @param field The field the condition applies to.
+        # @param value The value with which to compare the field according to the condition.
         def initialize(kind:, field:, value:)
           @kind = kind
           @field = field

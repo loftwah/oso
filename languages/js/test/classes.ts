@@ -8,11 +8,11 @@ export class A {
   }
 }
 
-export class Actor {
-  #name: string;
+export class BaseActor {
+  name: string;
 
   constructor(name: string) {
-    this.#name = name;
+    this.name = name;
   }
 
   widget(): Widget {
@@ -141,7 +141,7 @@ export class Foo {
     return 'c';
   }
 
-  d(x: any) {
+  d(x: unknown) {
     return x;
   }
 

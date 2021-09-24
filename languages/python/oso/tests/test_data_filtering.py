@@ -8,7 +8,7 @@ from sqlalchemy.ext.declarative import declarative_base
 
 from dataclasses import dataclass
 from oso import Oso
-from polar import Relationship
+from polar import Relation
 from functools import reduce
 
 
@@ -84,15 +84,14 @@ def t(oso):
     def get_foo_logs(constraints):
         return filter_array(foo_logs, constraints)
 
-    # When dealing with just data, the query is really already the results of the query.
-    # so exec is just returning.
-    def exec_query(results):
-        return results
-
     # Combining is combining but filtering out duplicates.
     def combine_query(q1, q2):
         results = q1 + q2
         return [i for n, i in enumerate(results) if i not in results[:n]]
+
+    oso.set_data_filtering_query_defaults(
+        exec_query=lambda results: results, combine_query=combine_query
+    )
 
     oso.register_class(
         Bar,
@@ -100,13 +99,11 @@ def t(oso):
             "id": str,
             "is_cool": bool,
             "is_still_cool": bool,
-            "foos": Relationship(
-                kind="children", other_type="Foo", my_field="id", other_field="bar_id"
+            "foos": Relation(
+                kind="many", other_type="Foo", my_field="id", other_field="bar_id"
             ),
         },
         build_query=get_bars,
-        exec_query=exec_query,
-        combine_query=combine_query,
     )
     oso.register_class(
         Foo,
@@ -115,19 +112,17 @@ def t(oso):
             "bar_id": str,
             "is_fooey": bool,
             "numbers": list,
-            "bar": Relationship(
-                kind="parent", other_type="Bar", my_field="bar_id", other_field="id"
+            "bar": Relation(
+                kind="one", other_type="Bar", my_field="bar_id", other_field="id"
             ),
-            "logs": Relationship(
-                kind="children",
+            "logs": Relation(
+                kind="many",
                 other_type="FooLogRecord",
                 my_field="id",
                 other_field="foo_id",
             ),
         },
         build_query=get_foos,
-        exec_query=exec_query,
-        combine_query=combine_query,
     )
     oso.register_class(
         FooLogRecord,
@@ -135,13 +130,11 @@ def t(oso):
             "id": str,
             "foo_id": str,
             "data": str,
-            "foo": Relationship(
-                kind="parent", other_type="Foo", my_field="foo_id", other_field="id"
+            "foo": Relation(
+                kind="one", other_type="Foo", my_field="foo_id", other_field="id"
             ),
         },
         build_query=get_foo_logs,
-        exec_query=exec_query,
-        combine_query=combine_query,
     )
     # Sorta hacky, just return anything you want to use in a test.
     return {
@@ -187,11 +180,9 @@ def sqlalchemy_t(oso):
 
     Base.metadata.create_all(engine)
 
-    def exec_query(query):
-        return query.all()
-
-    def combine_query(q1, q2):
-        return q1.union(q2)
+    oso.set_data_filtering_query_defaults(
+        exec_query=lambda query: query.all(), combine_query=lambda q1, q2: q1.union(q2)
+    )
 
     # @TODO: Somehow the session needs to get in here, didn't think about that yet... Just hack for now and use a global
     # one.
@@ -212,8 +203,6 @@ def sqlalchemy_t(oso):
         Bar,
         types={"id": str, "is_cool": bool, "is_still_cool": bool},
         build_query=get_bars,
-        exec_query=exec_query,
-        combine_query=combine_query,
     )
 
     def get_foos(constraints):
@@ -235,13 +224,11 @@ def sqlalchemy_t(oso):
             "id": str,
             "bar_id": str,
             "is_fooey": bool,
-            "bar": Relationship(
-                kind="parent", other_type="Bar", my_field="bar_id", other_field="id"
+            "bar": Relation(
+                kind="one", other_type="Bar", my_field="bar_id", other_field="id"
             ),
         },
         build_query=get_foos,
-        exec_query=exec_query,
-        combine_query=combine_query,
     )
 
     hello_bar = Bar(id="hello", is_cool=True, is_still_cool=True)
@@ -615,8 +602,8 @@ def roles(oso):
         types={
             "name": str,
             "org_name": str,
-            "org": Relationship(
-                kind="parent", other_type="Org", my_field="org_name", other_field="name"
+            "org": Relation(
+                kind="one", other_type="Org", my_field="org_name", other_field="name"
             ),
         },
         build_query=get_repos,
@@ -628,8 +615,8 @@ def roles(oso):
         types={
             "name": str,
             "repo_name": str,
-            "repo": Relationship(
-                kind="parent",
+            "repo": Relation(
+                kind="one",
                 other_type="Repo",
                 my_field="repo_name",
                 other_field="name",
@@ -654,8 +641,8 @@ def roles(oso):
         User,
         types={
             "name": str,
-            "roles": Relationship(
-                kind="children",
+            "roles": Relation(
+                kind="many",
                 other_type="Role",
                 my_field="name",
                 other_field="user_name",
@@ -667,59 +654,55 @@ def roles(oso):
     )
 
     policy = """
-    resource(_type: Org, "org", actions, roles) if
-        actions = [
-            "invite",
-            "create_repo"
-        ] and
-        roles = {
-            member: {
-                permissions: ["create_repo"],
-                implies: ["repo:reader"]
-            },
-            owner: {
-                permissions: ["invite"],
-                implies: ["repo:writer", "member"]
-            }
-        };
+      allow(actor, action, resource) if
+        has_permission(actor, action, resource);
 
-    resource(_type: Repo, "repo", actions, roles) if
-        actions = [
-            "push",
-            "pull"
-        ] and
-        roles = {
-            writer: {
-                permissions: ["push", "issue:edit"],
-                implies: ["reader"]
-            },
-            reader: {
-                permissions: ["pull"]
-            }
-        };
+      has_role(user: User, name: String, resource: Resource) if
+        role in user.roles and
+        role.role = name and
+        role.resource_name = resource.name;
 
-    resource(_type: Issue, "issue", actions, {}) if
-        actions = [
-            "edit"
-        ];
+      actor User {}
 
-    parent_child(parent_org: Org, repo: Repo) if
-        repo.org = parent_org;
+      resource Org {
+        roles = [ "owner", "member" ];
+        permissions = [ "invite", "create_repo" ];
 
-    parent_child(parent_repo: Repo, issue: Issue) if
-        issue.repo = parent_repo;
+        "create_repo" if "member";
+        "invite" if "owner";
 
-    actor_has_role_for_resource(actor, role_name: String, resource) if
-        role in actor.roles and
-        role.resource_name = resource.name and
-        role.role = role_name;
+        "member" if "owner";
+      }
 
-    allow(actor, action, resource) if
-        role_allows(actor, action, resource);
+      resource Repo {
+        roles = [ "writer", "reader" ];
+        permissions = [ "push", "pull" ];
+        relations = { parent: Org };
+
+        "pull" if "reader";
+        "push" if "writer";
+
+        "reader" if "writer";
+
+        "reader" if "member" on "parent";
+        "writer" if "owner" on "parent";
+      }
+
+      has_relation(org: Org, "parent", repo: Repo) if
+        org = repo.org;
+
+      resource Issue {
+        permissions = [ "edit" ];
+        relations = { parent: Repo };
+
+        "edit" if "writer" on "parent";
+      }
+
+      has_relation(repo: Repo, "parent", issue: Issue) if
+        repo = issue.repo;
     """
 
     oso.load_str(policy)
-    oso.enable_roles()
     return {
         "apple": apple,
         "osohq": osohq,

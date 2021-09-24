@@ -1,15 +1,43 @@
-import { resolve } from 'path/posix';
-import { resourceUsage } from 'process';
-import { Host, UserType } from './Host';
+import { Host } from './Host';
+import { isPolarTerm } from './types';
+import type { CombineQueryFn } from './types';
+import { isObj, isString } from './helpers';
 
-export class Relationship {
-  kind: string;
+interface Request {
+  class_tag: string;
+  constraints: Filter[];
+}
+
+interface ResultSet {
+  result_id: number;
+  resolve_order: number[];
+  requests: Map<number, Request>;
+}
+
+export interface FilterPlan {
+  result_sets: ResultSet[];
+}
+
+interface SerializedRelation {
+  Relation: {
+    kind: string;
+    other_class_tag: string;
+    my_field: string;
+    other_field: string;
+  };
+}
+
+type RelationKind = 'one' | 'many';
+
+/** Represents relationships between two resources, eg. one-one or one-many. */
+export class Relation {
+  kind: RelationKind;
   otherType: string;
   myField: string;
   otherField: string;
 
   constructor(
-    kind: string,
+    kind: RelationKind,
     otherType: string,
     myField: string,
     otherField: string
@@ -18,6 +46,17 @@ export class Relationship {
     this.otherType = otherType;
     this.myField = myField;
     this.otherField = otherField;
+  }
+
+  serialize(): SerializedRelation {
+    return {
+      Relation: {
+        kind: this.kind,
+        other_class_tag: this.otherType,
+        my_field: this.myField,
+        other_field: this.otherField,
+      },
+    };
   }
 }
 
@@ -30,122 +69,105 @@ export class Field {
 }
 
 class Ref {
-  field: string;
-  resultId: string;
+  resultId: number;
+  field?: string;
 
-  constructor(field: string, resultId: string) {
-    this.field = field;
+  constructor(resultId: number, field?: string) {
     this.resultId = resultId;
-  }
-}
-
-export class Constraint {
-  kind: string;
-  field: string;
-  value: any;
-
-  constructor(kind: string, field: string, value: any) {
-    this.kind = kind;
     this.field = field;
-    this.value = value;
   }
 }
 
-export function serializeTypes(userTypes: Map<any, UserType>): string {
-  let polarTypes: any = {};
-  for (let [tag, userType] of userTypes.entries())
-    if (typeof tag === 'string') {
-      let fields = userType.fields;
-      let fieldTypes: any = {};
-      for (let [k, v] of fields.entries()) {
-        if (v instanceof Relationship) {
-          fieldTypes[k] = {
-            Relationship: {
-              kind: v.kind,
-              other_class_tag: v.otherType,
-              my_field: v.myField,
-              other_field: v.otherField,
-            },
-          };
-        } else {
-          fieldTypes[k] = {
-            Base: {
-              class_tag: userTypes.get(v)?.name,
-            },
-          };
-        }
-      }
-      polarTypes[tag] = fieldTypes;
-    }
-  return JSON.stringify(polarTypes);
+export type FilterKind = 'Eq' | 'Neq' | 'In' | 'Contains';
+
+/** Represents a condition that must hold on a resource. */
+export interface Filter {
+  kind: FilterKind;
+  value: unknown; // Ref | Field | Term
+  field?: string;
 }
 
-async function parseConstraint(
+export type SerializedFields = {
+  [field: string]: SerializedRelation | { Base: { class_tag: string } };
+};
+
+async function parseFilter(host: Host, filter: Filter): Promise<Filter> {
+  const { kind, field } = filter;
+  if (!['Eq', 'Neq', 'In', 'Contains'].includes(kind)) throw new Error();
+  if (field !== undefined && !isString(field)) throw new Error();
+
+  let { value } = filter;
+  if (!isObj(value)) throw new Error();
+
+  if (isPolarTerm(value['Term'])) {
+    value = await host.toJs(value['Term']);
+  } else if (isObj(value['Ref'])) {
+    const { field: childField, result_id: resultId } = value['Ref'];
+    if (childField !== undefined && !isString(childField)) throw new Error();
+    if (!Number.isInteger(resultId)) throw new Error();
+    value = new Ref(resultId as number, childField);
+  } else if (isString(value['Field'])) {
+    value = new Field(value['Field']);
+  } else {
+    throw new Error();
+  }
+
+  return { kind, value, field };
+}
+
+function groundFilter(results: Map<number, unknown[]>, filter: Filter): Filter {
+  const ref = filter.value;
+  if (!(ref instanceof Ref)) return filter;
+
+  let value = results.get(ref.resultId);
+  value = !ref.field ? value : value?.map(v => (v as any)[ref.field!]); // eslint-disable-line @typescript-eslint/no-explicit-any
+
+  return { ...filter, value };
+}
+
+export async function filterData(
   host: Host,
-  constraint: any
-): Promise<Constraint> {
-  let kind = constraint['kind'];
-  let field = constraint['field'];
-  let value = constraint['value'];
+  plan: FilterPlan
+): Promise<unknown> {
+  const queries = [];
+  let combine: CombineQueryFn | undefined;
+  for (const rs of plan.result_sets) {
+    const setResults: Map<number, unknown[]> = new Map();
+    for (const i of rs.resolve_order) {
+      const req = rs.requests.get(i)!;
+      const filters = await Promise.all(
+        req.constraints.map(async constraint => {
+          const con = await parseFilter(host, constraint);
+          // Substitute in results from previous requests.
+          return groundFilter(setResults, con);
+        })
+      );
 
-  let valueKind = Object.keys(value)[0];
-  value = value[valueKind];
-  if (valueKind == 'Term') {
-    value = await host.toJs(value);
-  } else if (valueKind == 'Ref') {
-    let childField = value['field'];
-    let resultId = value['result_id'];
-    value = new Ref(childField, resultId);
-  } else if (valueKind == 'Field') {
-    value = new Field(value);
-  }
+      // NOTE(gj|gw): The class_tag on the request comes from serializeTypes(),
+      // a function we use to pass type information to the core in order to
+      // generate the filter plan. The type information is derived from
+      // Host.userTypes, so anything you get back as a class_tag will exist as
+      // a key in the Host.userTypes Map.
+      const typ = host.getType(req.class_tag)!;
 
-  return new Constraint(kind, field, value);
-}
-
-function groundConstraint(results: any, con: Constraint) {
-  let ref = con.value;
-  if (!(ref instanceof Ref)) return;
-  con.value = results.get(ref.resultId);
-  if (ref.field != null) con.value = con.value.map((v: any) => v[ref.field]);
-}
-
-function groundConstraints(results: any, constraints: any): any {
-  for (let c of constraints) groundConstraint(results, c);
-  return constraints;
-}
-
-// @TODO: type for filter plan
-
-export async function filterData(host: Host, plan: any): Promise<any> {
-  let queries: any = [];
-  let combine: any;
-  for (let rs of plan.result_sets) {
-    let setResults = new Map();
-
-    for (let i of rs.resolve_order) {
-      let req = rs.requests.get(i);
-      let constraints = req.constraints;
-
-      for (let i in constraints) {
-        let con = await parseConstraint(host, constraints[i]);
-        // Substitute in results from previous requests.
-        groundConstraint(setResults, con);
-        constraints[i] = con;
-      }
-
-      let typ = host.types.get(req.class_tag)!;
-      let query = await Promise.resolve(typ.buildQuery!(constraints));
-      if (i != rs.result_id) {
-        setResults.set(i, await Promise.resolve(typ.execQuery!(query)));
+      const query = await typ.buildQuery(filters);
+      if (i !== rs.result_id) {
+        setResults.set(i, await typ.execQuery(query));
       } else {
         queries.push(query);
-        combine = typ.combineQuery!;
+        combine = typ.combineQuery;
       }
     }
   }
 
-  if (queries.length == 0) return null;
+  if (queries.length === 0) return null;
+
+  // NOTE(gw|gj): combine will only be undefined in two cases: (1) if
+  // result_set.result_id is not a member of result_set.resolve_order; (2)
+  // there are no result_sets. Either one of these would be a bug in the data
+  // filtering logic in the core.
+  if (combine === undefined) throw new Error();
+
   // @TODO remove duplicates
   return queries.reduce(combine);
 }
