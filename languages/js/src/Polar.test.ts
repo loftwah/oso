@@ -10,7 +10,6 @@ import {
   tempFile,
   tempFileFx,
   tempFileGx,
-  truncate,
 } from '../test/helpers';
 import {
   A,
@@ -324,7 +323,9 @@ Application error: Foo { a: 'A' }.a is not a function at line 1, column 1`
     const animal = 'new Animal({})';
 
     test('can unify instances with a custom equality function', async () => {
-      const p = new Polar({ equalityFn: (x, y) => x.family === y.family });
+      const p = new Polar({
+        equalityFn: (x: any, y: any) => x.family === y.family, // eslint-disable-line @typescript-eslint/no-explicit-any
+      });
       p.registerClass(Animal);
       await p.loadStr(`
           yup() if new Animal({family: "steve"}) = new Animal({family: "steve"});
@@ -457,6 +458,7 @@ Application error: Foo { a: 'A' }.a is not a function at line 1, column 1`
   test('errors when passed a non-constructable type', () => {
     expect(() => {
       const p = new Polar();
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
       p.registerClass(Math);
     }).toThrow(InvalidConstructorError);
@@ -477,7 +479,7 @@ describe('conversions between JS + Polar values', () => {
 
   test('unifies equivalent JS and Polar types', async () => {
     const p = new Polar();
-    var result = await query(p, 'new Integer(1) = 1');
+    let result = await query(p, 'new Integer(1) = 1');
     expect(result).toStrictEqual([map()]);
     result = await query(p, 'new String("foo") = "foo"');
     expect(result).toStrictEqual([map()]);
@@ -496,9 +498,9 @@ describe('conversions between JS + Polar values', () => {
       const p = new Polar();
       p.registerClass(Counter);
 
-      const preLoadInstanceCount = p.__host().instances().length;
+      const preLoadInstanceCount = p.getHost().instances().length;
       await p.loadStr('f(_: Counter) if Counter.count() > 0;');
-      const preQueryInstanceCount = p.__host().instances().length;
+      const preQueryInstanceCount = p.getHost().instances().length;
       expect(preLoadInstanceCount).toStrictEqual(preQueryInstanceCount);
 
       expect(Counter.count()).toBe(0);
@@ -506,7 +508,7 @@ describe('conversions between JS + Polar values', () => {
       expect(Counter.count()).toBe(1);
 
       expect(await queryRule(p, 'f', c)).toStrictEqual([map()]);
-      const postQueryInstanceCount = p.__host().instances().length;
+      const postQueryInstanceCount = p.getHost().instances().length;
       expect(preQueryInstanceCount).toStrictEqual(postQueryInstanceCount);
 
       expect(Counter.count()).toBe(1);
@@ -514,31 +516,31 @@ describe('conversions between JS + Polar values', () => {
   });
 });
 
-describe('#loadFile', () => {
+describe('#loadFiles', () => {
   test('loads a Polar file', async () => {
     const p = new Polar();
-    await p.loadFile(await tempFileFx());
+    await p.loadFiles([await tempFileFx()]);
     expect(await qvar(p, 'f(x)', 'x')).toStrictEqual([1, 2, 3]);
   });
 
   test('passes the filename across the FFI boundary', async () => {
     const p = new Polar();
     const file = await tempFile(';', 'invalid.polar');
-    await expect(p.loadFile(file)).rejects.toThrow(
+    await expect(p.loadFiles([file])).rejects.toThrow(
       `did not expect to find the token ';' at line 1, column 1 in file ${file}`
     );
   });
 
   test('throws if given a non-Polar file', async () => {
     const p = new Polar();
-    await expect(p.loadFile('other.ext')).rejects.toThrow(
+    await expect(p.loadFiles(['other.ext'])).rejects.toThrow(
       PolarFileExtensionError
     );
   });
 
   test('throws if given a non-existent file', async () => {
     const p = new Polar();
-    await expect(p.loadFile('other.polar')).rejects.toThrow(
+    await expect(p.loadFiles(['other.polar'])).rejects.toThrow(
       PolarFileNotFoundError
     );
   });
@@ -644,18 +646,18 @@ describe('#makeInstance', () => {
   test('handles no args', async () => {
     const p = new Polar();
     p.registerClass(ConstructorNoArgs);
-    await p.__host().makeInstance(ConstructorNoArgs.name, [], 1);
-    const instance = p.__host().getInstance(1);
+    await p.getHost().makeInstance(ConstructorNoArgs.name, [], 1);
+    const instance = p.getHost().getInstance(1);
     expect(instance).toStrictEqual(new ConstructorNoArgs());
   });
 
   test('handles positional args', async () => {
     const p = new Polar();
     p.registerClass(ConstructorArgs);
-    const one = p.__host().toPolar(1);
-    const two = p.__host().toPolar(2);
-    await p.__host().makeInstance(ConstructorArgs.name, [one, two], 1);
-    const instance = p.__host().getInstance(1);
+    const one = p.getHost().toPolar(1);
+    const two = p.getHost().toPolar(2);
+    await p.getHost().makeInstance(ConstructorArgs.name, [one, two], 1);
+    const instance = p.getHost().getInstance(1);
     expect(instance).toStrictEqual(new ConstructorArgs(1, 2));
   });
 
@@ -741,7 +743,7 @@ describe('#registerConstant', () => {
     describe('that return undefined', () => {
       test('without things blowing up', async () => {
         const p = new Polar();
-        p.registerConstant({}, 'u');
+        p.registerConstant({ x: undefined, y: undefined }, 'u');
         expect(await query(p, 'u.x = u.y')).toStrictEqual([map()]);
         await expect(query(p, 'u.x.y')).rejects.toThrow();
       });
@@ -897,7 +899,7 @@ Type error: can only use \`in\` on an iterable value, this is Number(Integer(2))
     undefined.foo
   in query at line 1, column 1
     undefined.foo
-Application error: Cannot read property 'foo' of undefined at line 1, column 1`
+Application error: Cannot read propert`
       );
     });
   });
@@ -943,7 +945,7 @@ describe('±∞ and NaN', () => {
 test('ExternalOp events test for equality succeeds', async () => {
   // js objects are never equal so we override
   // weirdness in js definition of equality
-  const p = new Polar({ equalityFn: (_x, _y) => true });
+  const p = new Polar({ equalityFn: () => true });
   p.registerClass(X);
   expect(await query(p, 'new X() == new X()')).toStrictEqual([map()]);
   expect(await query(p, 'new X() != new X()')).toStrictEqual([]);
@@ -1140,4 +1142,23 @@ describe('Oso Roles', () => {
     const policy5 = policy4 + 'type f(x: Foo, x.baz);';
     await expect(p.loadStr(policy5)).rejects.toThrow('Invalid rule type');
   });
+});
+
+test('can specialize on a dict with undefineds', async () => {
+  const p = new Polar();
+  await p.loadStr('f(_: {x: 1});');
+
+  const noAttr = {};
+  const hasAttr = { x: 1 };
+
+  const result1 = await query(p, pred('f', hasAttr));
+  expect(result1).toStrictEqual([map()]);
+
+  const result2 = await query(p, pred('f', noAttr));
+  expect(result2).toStrictEqual([]);
+
+  Object.setPrototypeOf(noAttr, hasAttr);
+
+  const result3 = await query(p, pred('f', noAttr));
+  expect(result3).toStrictEqual([map()]);
 });

@@ -9,6 +9,9 @@ RUBY_DIR := $(OSO_ROOT)/languages/ruby
 # Needed for tests
 JAVA_PACKAGE_JAR_PATH := $(JAVA_DIR)/oso/target/oso-0.20.1.jar
 
+# Note: if you are using bundler in a sub-makefile (in a docs test for example),
+# you need to add `unexport BUNDLE_GEMFILE` to that makefile. Otherwise this
+# setting will take precedence over the working directory.
 export BUNDLE_GEMFILE := $(RUBY_DIR)/Gemfile
 
 submodules: .make.submodules.installed
@@ -21,7 +24,7 @@ update-submodules:
 	git submodule update --checkout --init --recursive --remote
 	cd roles/sqlalchemy/basic && git checkout basic_roles_complete && git pull
 
-.PHONY: submodules update-submodules java-test java-test-context java-test-rbac
+.PHONY: submodules update-submodules java-test java-test-context java-test-rbac  python-test ruby-test nodejs-test test-quickstarts-release test-quickstarts-local test
 
 $(JAVA_PACKAGE_JAR_PATH):
 	$(MAKE) -C $(JAVA_DIR) package
@@ -58,8 +61,11 @@ nodejs-test:
 	cd inheritance/nodejs && yarn && yarn jest
 	cd user_types/nodejs && yarn && yarn jest
 
-test-quickstarts: submodules
-	$(MAKE) -C quickstart test
+test-quickstarts-release: submodules
+	$(MAKE) -C quickstart test-release
+
+test-quickstarts-local: submodules
+	$(MAKE) -C quickstart test-local
 
 test:
 	$(MAKE) -C add-to-your-application test
@@ -68,3 +74,4 @@ test:
 	$(MAKE) ruby-test
 	$(MAKE) java-test
 	$(MAKE) nodejs-test
+	$(MAKE) test-quickstarts-local

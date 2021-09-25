@@ -5,6 +5,7 @@ const createInterface = require('readline')?.createInterface;
 import { parseQueryEvent } from './helpers';
 import {
   DuplicateInstanceRegistrationError,
+  InvalidAttributeError,
   InvalidCallError,
   InvalidIteratorError,
 } from './errors';
@@ -25,8 +26,14 @@ import type {
   Result,
 } from './types';
 import { processMessage } from './messages';
-import { isAsyncIterator, isIterableIterator, QueryEventKind } from './types';
-import { Filter, Relation } from './dataFiltering';
+import {
+  isAsyncIterable,
+  isIterable,
+  isIterableIterator,
+  QueryEventKind,
+} from './types';
+import { Relation } from './dataFiltering';
+import type { FilterKind } from './dataFiltering';
 
 function getLogLevelsFromEnv() {
   if (typeof process?.env === 'undefined') return [undefined, undefined];
@@ -44,15 +51,13 @@ export class Query {
   #host: Host;
   results: QueryResult;
 
-  constructor(ffiQuery: FfiQuery, host: Host, bindings?: Map<string, any>) {
+  constructor(ffiQuery: FfiQuery, host: Host, bindings?: Map<string, unknown>) {
     ffiQuery.setLoggingOptions(...getLogLevelsFromEnv());
     this.#ffiQuery = ffiQuery;
     this.#calls = new Map();
     this.#host = host;
 
-    for (const k in bindings) {
-      this.bind(k, bindings.get(k));
-    }
+    if (bindings) for (const [k, v] of bindings) this.bind(k, v);
 
     this.results = this.start();
   }
@@ -62,7 +67,7 @@ export class Query {
    *
    * @internal
    */
-  private bind(name: string, value: any) {
+  private bind(name: string, value: unknown) {
     this.#ffiQuery.bind(name, JSON.stringify(this.#host.toPolar(value)));
   }
 
@@ -72,8 +77,8 @@ export class Query {
    * @internal
    */
   private processMessages() {
-    while (true) {
-      let msg = this.#ffiQuery.nextMessage();
+    for (;;) {
+      const msg = this.#ffiQuery.nextMessage();
       if (msg === undefined) break;
       processMessage(msg);
     }
@@ -120,6 +125,36 @@ export class Query {
   }
 
   /**
+   * Handle an external call on a relation.
+   *
+   * @internal
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async handleRelation(receiver: any, rel: Relation): Promise<unknown> {
+    // TODO(gj|gw): we should add validation for UserType relations once we
+    // have a nice hook where we know every class has been registered
+    // (e.g., once we enforce that all registerCalls() have to happen
+    // before loadFiles()).
+    const typ = this.#host.getType(rel.otherType)!;
+    // Use the fetcher for the other type to traverse
+    // the relationship.
+    const filter = {
+      kind: 'Eq' as FilterKind,
+      value: receiver[rel.myField],
+      field: rel.otherField,
+    };
+    const query = await typ.buildQuery([filter]);
+    const results = await typ.execQuery(query);
+    if (rel.kind === 'one') {
+      if (results.length !== 1)
+        throw new Error('Wrong number of parents: ' + results.length);
+      return results[0];
+    } else {
+      return results;
+    }
+  }
+
+  /**
    * Handle an application call.
    *
    * @internal
@@ -132,38 +167,14 @@ export class Query {
   ): Promise<void> {
     let value;
     try {
-      const receiver = await this.#host.toJs(instance);
+      const receiver = (await this.#host.toJs(instance)) as any; // eslint-disable-line @typescript-eslint/no-explicit-any
       const userTypes = this.#host.types;
 
       // Check if it's a relationship
-      if (receiver != undefined) {
-        const userType = userTypes.get(receiver.constructor);
-        const clsName = userType?.name;
-        const typedef = userType?.fields;
-        const fieldType = typedef?.get(attr);
-        if (fieldType != null) {
-          if (fieldType instanceof Relation) {
-            const typ = userTypes.get(fieldType.otherType)!;
-            // Use the fetcher for the other type to traverse
-            // the relationship.
-            const constraint = new Filter(
-              'Eq',
-              fieldType.otherField,
-              receiver[fieldType.myField]
-            );
-            let query = await Promise.resolve(typ.buildQuery!([constraint]));
-            let results = await Promise.resolve(typ.execQuery!(query));
-            if (fieldType.kind == 'one') {
-              if (results.length != 1)
-                throw new Error('Wrong number of parents: ' + results.length);
-              value = results[0];
-            } else {
-              value = results;
-            }
-          }
-        }
-      }
-      if (value == undefined) {
+      const rel = userTypes.get(receiver?.constructor)?.fields?.get(attr);
+      if (rel instanceof Relation) {
+        value = await this.handleRelation(receiver, rel);
+      } else {
         value = receiver[attr];
         if (args !== undefined) {
           if (typeof value === 'function') {
@@ -174,10 +185,20 @@ export class Query {
             // Error on attempt to call non-function.
             throw new InvalidCallError(receiver, attr);
           }
+        } else {
+          // If value isn't a property anywhere in receiver's prototype chain,
+          // throw an error.
+          if (value === undefined && !(attr in receiver)) {
+            throw new InvalidAttributeError(receiver, attr);
+          }
         }
       }
     } catch (e) {
-      if (e instanceof TypeError || e instanceof InvalidCallError) {
+      if (
+        e instanceof TypeError ||
+        e instanceof InvalidCallError ||
+        e instanceof InvalidAttributeError
+      ) {
         this.applicationError(e.message);
       } else {
         throw e;
@@ -198,12 +219,12 @@ export class Query {
         if (isIterableIterator(value)) {
           // If the call result is an iterable iterator, yield from it.
           yield* value;
-        } else if (isAsyncIterator(value)) {
+        } else if (isAsyncIterable(value)) {
           // Same for async iterators.
           for await (const result of value) {
             yield result;
           }
-        } else if (Symbol.iterator in Object(value)) {
+        } else if (isIterable(value)) {
           for (const result of value) {
             yield result;
           }
@@ -232,14 +253,15 @@ export class Query {
         switch (event.kind) {
           case QueryEventKind.Done:
             return;
-          case QueryEventKind.Result:
+          case QueryEventKind.Result: {
             const { bindings } = event.data as Result;
-            const transformed: Map<string, any> = new Map();
-            for (const [k, v] of bindings.entries()) {
+            const transformed: Map<string, unknown> = new Map();
+            for (const [k, v] of bindings) {
               transformed.set(k, await this.#host.toJs(v));
             }
             yield transformed;
             break;
+          }
           case QueryEventKind.MakeExternal: {
             const { instanceId, tag, fields } = event.data as MakeExternal;
             if (this.#host.hasInstance(instanceId))
@@ -303,8 +325,8 @@ export class Query {
             await this.handleNextExternal(callId, iterable);
             break;
           }
-          case QueryEventKind.Debug:
-            if (createInterface == null) {
+          case QueryEventKind.Debug: {
+            if (typeof createInterface !== 'function') {
               console.warn('debug events not supported in browser oso');
               break;
             }
@@ -322,6 +344,11 @@ export class Query {
               this.processMessages();
             });
             break;
+          }
+          default: {
+            const _: never = event.kind;
+            return _;
+          }
         }
       }
     } finally {
