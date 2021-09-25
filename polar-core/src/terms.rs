@@ -87,6 +87,31 @@ pub struct Call {
     pub kwargs: Option<BTreeMap<Symbol, Term>>,
 }
 
+pub enum Op {
+    Debug(TermList),
+    Print(TermList),
+    Cut(TermList),
+    In(TermList),
+    Isa(TermList),
+    New(TermList),
+    Dot(TermList),
+    Not(TermList),
+    Mul(TermList),
+    Div(TermList),
+    Mod(TermList),
+    Rem(TermList),
+    Add(TermList),
+    Sub(TermList),
+    Eq(TermList),
+    Geq(TermList),
+    Leq(TermList),
+    Neq(TermList),
+    Gt(TermList),
+    Lt(TermList),
+    Or(TermList),
+    And(TermList),
+    ForAll(TermList) }
+
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum Operator {
     Debug,
@@ -429,6 +454,7 @@ impl Term {
     pub fn is_ground(&self) -> bool {
         self.value().is_ground()
     }
+
 
     /// Get a set of all the variables used within a term.
     pub fn variables(&self, vars: &mut HashSet<Symbol>) {

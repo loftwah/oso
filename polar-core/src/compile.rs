@@ -6,142 +6,112 @@ use crate::counter::*;
 use std::collections::HashMap;
 
 pub struct JS(pub String);
-pub trait Compile<T> {
-    fn compile(&self) -> T;
-}
 
-impl Compile<JS> for Numeric {
-    fn compile(&self) -> JS {
+// wrong serializer!
+impl JsString for Numeric {
+    fn to_js(&self) -> String {
         match self {
-            Self::Integer(i) => JS(format!("{}", i)),
-            Self::Float(f) => JS(format!("{}", f)),
-        }
-    }
-}
+            Numeric::Integer(i) => format!("{}", i),
+            Numeric::Float(f) => format!("{}", f), } } }
 
-impl Compile<JS> for String {
-    fn compile(&self) -> JS {
-        JS(format!("{:?}", self))
-    }
-}
+pub trait JsString { fn to_js(&self) -> String; }
 
-impl Compile<JS> for bool {
-    fn compile(&self) -> JS {
-        JS(format!("{:?}", self))
-    }
-}
+impl<A> From<A> for JS where A: JsString  {
+    fn from(a: A) -> JS { JS(a.to_js()) } }
 
-impl Compile<JS> for Dictionary {
-    fn compile(&self) -> JS {
-        JS(format!(
-            "{{{}}}",
-            self.fields.iter().fold(String::new(), |mut out, (k, v)| {
-                out.push_str(&format!("{:?}:{},", k.0, v.compile().0));
-                out
-            })
-        ))
-    }
-}
 
-impl Compile<JS> for Symbol {
-    fn compile(&self) -> JS {
-        JS(self.0.clone())
-    }
-}
+impl JsString for Term {
+    fn to_js(&self) -> String { self.value().to_js() } }
 
-impl Compile<JS> for Call {
-    fn compile(&self) -> JS {
-        let args = self
-            .args
+impl<A> JsString for Vec<A> where A: JsString {
+    fn to_js(&self) -> String {
+        format!("[{}]", self.iter().map(|x| x.to_js()).collect::<Vec<_>>().join(",")) } }
+
+impl JsString for Value {
+    fn to_js(&self) -> String { match self {
+        Self::List(l) => l.to_js(),
+        Self::Number(n) => n.to_js(),
+        Self::String(s) => s.to_js(),
+        Self::Boolean(b) => b.to_js(),
+        Self::Dictionary(d) => d.to_js(),
+        Self::Expression(o) => o.to_js(),
+        Self::Variable(s) | Self::RestVariable(s) => s.to_js(),
+        _ => unimplemented!("don't know how to JS {}", self.to_polar()), } } }
+
+
+impl JsString for Dictionary {
+    fn to_js(&self) -> String { format!( "{{{}}}",
+        self.fields.iter().map(|(k, v)| {
+            format!("{:?}:{}", k.0, v.to_js())
+        }).collect::<Vec<_>>().join(",")) } }
+
+impl JsString for Call {
+    fn to_js(&self) -> String { format!(
+        "(s=>(kb[\"{}\"].map(f=>f({})).reduce(disj))(s))",
+        self.name.0,
+        self.args
             .iter()
-            .map(|x| x.compile().0)
+            .map(|x| x.to_js())
             .collect::<Vec<_>>()
-            .join(",");
-        JS(format!(
-            "(s=>(kb[\"{}\"].map(f=>f({})).reduce(disj))(s))",
-            self.name.0, args
-        ))
-    }
-}
+            .join(",")) } }
 
-impl Compile<JS> for Pattern {
-    fn compile(&self) -> JS {
+impl JsString for Pattern {
+    fn to_js(&self) -> String {
         match self {
-            Self::Dictionary(d) => d.compile(),
-            Self::Instance(i) => i.tag.compile(),
+            Self::Dictionary(d) => d.to_js(),
+            Self::Instance(i) => i.tag.to_js(),
         }
     }
 }
 
-impl Compile<JS> for Operation {
-    fn compile(&self) -> JS {
-        JS(match self.operator {
+impl JsString for Operation {
+    fn to_js(&self) -> String {
+        match self.operator {
             Operator::Unify | Operator::Eq | Operator::Assign => format!(
                 "join({},{})",
-                self.args[0].compile().0,
-                self.args[1].compile().0
+                self.args[0].to_js(),
+                self.args[1].to_js()
             ),
             Operator::Neq => format!(
                 "split({},{})",
-                self.args[0].compile().0,
-                self.args[1].compile().0
+                self.args[0].to_js(),
+                self.args[1].to_js()
             ),
             Operator::And => self.args.iter().rev().fold("(x=>x)".to_owned(), |m, i| {
-                format!("conj({},{})", i.compile().0, m)
+                format!("conj({},{})", i.to_js(), m)
             }),
             Operator::Or => self
                 .args
                 .iter()
                 .rev()
                 .fold("(_=>undefined)".to_owned(), |m, i| {
-                    format!("disj({},{})", i.compile().0, m)
+                    format!("disj({},{})", i.to_js(), m)
                 }),
             Operator::Not => format!(
                 "(s=>({})(Object.assign({{}},s))===undefined?s:undefined)",
-                self.args[0].compile().0
+                self.args[0].to_js()
             ),
             Operator::Dot => format!(
                 "(s=>join({},walk({})(s)[{}])(s))",
-                self.args[2].compile().0,
-                self.args[0].compile().0,
-                self.args[1].compile().0
+                self.args[2].to_js(),
+                self.args[0].to_js(),
+                self.args[1].to_js()
             ),
             Operator::Isa => format!(
                 "(s=>is(walk({})(s),{})?s:undefined)",
-                self.args[0].compile().0,
-                self.args[1].compile().0
+                self.args[0].to_js(),
+                self.args[1].to_js()
             ),
             _ => unimplemented!("don't know how to compile {:?}", self),
-        })
+        }
     }
 }
 
-impl<A> Compile<JS> for Vec<A>
-where
-    A: Compile<JS>,
-{
-    fn compile(&self) -> JS {
-        JS(format!(
-            "[{}]",
-            self.iter().fold(String::new(), |mut out, i| {
-                out.push_str(&format!("{},", i.compile().0));
-                out
-            })
-        ))
-    }
-}
-
-impl Compile<JS> for Term {
-    fn compile(&self) -> JS {
-        self.value().compile()
-    }
-}
-
-impl Compile<JS> for Rule {
-    fn compile(&self) -> JS {
-        let counter = Counter::default();
+impl JsString for Rule {
+    fn to_js(&self) -> String {
+        let c = Counter::default();
+        let gensym = || Symbol(format!("__{}__", c.next()));
         let mut lits: HashMap<String, Term> = HashMap::new();
-        let gensym = || Symbol(format!("__{}__", counter.next()));
         let body = self.body.value().as_expression().unwrap().clone();
         let formal_params = self.params.iter().map(|p| match p.parameter.value().as_symbol() {
             Ok(s) => s.clone(),
@@ -158,7 +128,7 @@ impl Compile<JS> for Rule {
                     a.push(v)
                 }
             }
-            a.into_iter().map(|p| p.compile().0).collect()
+            a.into_iter().map(|p| p.to_js()).collect()
         };
         let params1 = all_vars.join(",");
         let params2 = formal_params
@@ -166,73 +136,49 @@ impl Compile<JS> for Rule {
             .map(|p| format!("_{}", p))
             .collect::<Vec<_>>()
             .join(",");
-        let body = formal_params
+        let body =
+            formal_params
             .iter()
             .map(|nom| format!("join({},_{})", nom, nom))
-            .fold(self.body.compile().0, |m, i| format!("conj({},{})", i, m));
-        let vars = all_vars
-            .iter()
-            .map(|s| {
-                if let Some(t) = lits.remove(s) {
-                    t.compile().0
-                } else {
-                    "(new Var())".to_owned()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        JS(format!(
+            .fold(self.body.to_js(), |m, i| format!("conj({},{})", i, m));
+        format!(
             "(({})=>(({})=>{})({}))",
-            params2, params1, body, vars
-        ))
+            params2, params1,
+            body,
+            all_vars.iter()
+                .map(|s| lits.remove(s).map_or_else(||String::from("(new Var())"), |t| t.to_js()))
+                .collect::<Vec<_>>()
+                .join(",")
+        )
     }
 }
 
-impl Compile<JS> for GenericRule {
-    fn compile(&self) -> JS {
-        let ary = self
-            .rules
-            .values()
-            .map(|r| r.compile().0)
-            .collect::<Vec<_>>()
-            .join(",");
-        JS(format!("[{}]", ary))
-    }
-}
+impl JsString for GenericRule {
+    fn to_js(&self) -> String {
+        format!(
+            "[{}]",
+            self.rules.values()
+                .map(|r| r.to_js())
+                .collect::<Vec<_>>()
+                .join(",")) } }
 
-impl Compile<JS> for KnowledgeBase {
-    fn compile(&self) -> JS {
-        let fields = self
-            .rules
-            .iter()
-            .map(|(k, v)| format!("{}:{}", k.compile().0, v.compile().0));
-        JS(format!("{{{}}}", fields.collect::<Vec<_>>().join(",")))
-    }
-}
+impl JsString for KnowledgeBase {
+    fn to_js(&self) -> String {
+        format!("{{{}}}",
+            self.rules.iter()
+                .map(|(k, v)| format!("{}:{}", k.to_js(), v.to_js()))
+                .collect::<Vec<_>>().join(",")) } }
 
-impl Compile<JS> for Polar {
-    fn compile(&self) -> JS {
-        let kb = self.kb.read().unwrap().compile().0;
-        JS(format!("((rule,...args)=>{{const kb={};return (kb[rule]||[_=>_=>undefined]).map(f=>f(...args)).reduce(disj)({{}})}})", kb))
-    }
-}
+impl JsString for bool { fn to_js(&self) -> String { format!("{}", self) } }
+impl JsString for String { fn to_js(&self) -> String { format!("{:?}", self) } }
+impl JsString for i64 { fn to_js(&self) -> String { format!("{}", self) } }
+impl JsString for f64 { fn to_js(&self) -> String { format!("{}", self) } }
+impl JsString for Symbol { fn to_js(&self) -> String { self.0.clone() } }
 
-impl Compile<JS> for Value {
-    fn compile(&self) -> JS {
-        match self {
-            Self::Number(n) => n.compile(),
-            Self::String(s) => s.compile(),
-            Self::Boolean(b) => b.compile(),
-            Self::Dictionary(d) => d.compile(),
-            Self::List(l) => l.compile(),
-            Self::Variable(s) => s.compile(),
-            Self::Call(c) => c.compile(),
-            Self::Expression(x) => x.compile(),
-            Self::Pattern(p) => p.compile(),
-            _ => unimplemented!("don't know how to compile {:?}", self),
-        }
-    }
-}
+impl JsString for Polar {
+    fn to_js(&self) -> String {
+        format!("((rule,...args)=>{{const kb={};return (kb[rule]||[_=>_=>undefined]).map(f=>f(...args)).reduce(disj)({{}})}})",
+            self.kb.read().unwrap().to_js()) } }
 
 #[cfg(test)]
 mod tests {
@@ -247,19 +193,19 @@ mod tests {
     #[test]
     fn test_compile_list() {
         let term: Term = vec![1.into(), 2.into()].into();
-        assert_eq!(term.compile().0, "[1,2,]".to_owned());
+        assert_eq!(term.to_js(), "[1,2]".to_owned());
 
         let term: Term = vec!["asdf".into(), "qwer".into(), "zxcv".into()].into();
-        assert_eq!(term.compile().0, "[\"asdf\",\"qwer\",\"zxcv\",]".to_owned());
+        assert_eq!(term.to_js(), "[\"asdf\",\"qwer\",\"zxcv\"]".to_owned());
 
         let term: Term = vec![].into();
-        assert_eq!(term.compile().0, "[]".to_owned());
+        assert_eq!(term.to_js(), "[]".to_owned());
 
         let term: Term = vec![true.into(), false.into()].into();
-        assert_eq!(term.compile().0, "[true,false,]".to_owned());
+        assert_eq!(term.to_js(), "[true,false]".to_owned());
 
         let term: Term = vec![Value::Dictionary(Dictionary::default()).into()].into();
-        assert_eq!(term.compile().0, "[{},]".to_owned())
+        assert_eq!(term.to_js(), "[{}]".to_owned())
     }
 
     #[test]
@@ -268,9 +214,9 @@ mod tests {
             fields: btreemap! { sym!("asdf") => 1.into() },
         };
         let term: Term = Value::Dictionary(dict).into();
-        assert_eq!(term.compile().0, "{\"asdf\":1,}".to_owned());
+        assert_eq!(term.to_js(), "{\"asdf\":1}".to_owned());
         let term: Term = Value::Dictionary(Dictionary::default()).into();
-        assert_eq!(term.compile().0, "{}".to_owned());
+        assert_eq!(term.to_js(), "{}".to_owned());
     }
 
     #[test]
@@ -282,7 +228,7 @@ mod tests {
         )
         .into();
         assert_eq!(
-            and.compile().0,
+            and.to_js(),
             "conj(join(a,1),conj(join(b,2),(x=>x)))".to_owned()
         )
     }
@@ -291,7 +237,7 @@ mod tests {
     fn test_compile_dot() {
         let dot: Term = op!(Dot, var!("a"), str!("qwer"), var!("b")).into();
         assert_eq!(
-            dot.compile().0,
+            dot.to_js(),
             "(s=>join(b,walk(a)(s)[\"qwer\"])(s))".to_owned()
         )
     }
@@ -319,7 +265,7 @@ mod tests {
             source_info: SourceInfo::Test,
         };
 
-        assert_eq!(rule.compile().0, "((_a,_b)=>((a,b)=>conj(join(b,_b),conj(join(a,_a),conj(join(a,1),conj(join(b,a),(x=>x))))))((new Var()),(new Var())))".to_owned())
+        assert_eq!(rule.to_js(), "((_a,_b)=>((a,b)=>conj(join(b,_b),conj(join(a,_a),conj(join(a,1),conj(join(b,a),(x=>x))))))((new Var()),(new Var())))".to_owned())
     }
 
     #[test]

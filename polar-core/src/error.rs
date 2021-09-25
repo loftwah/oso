@@ -34,6 +34,7 @@ pub enum ErrorKind {
     Operational(OperationalError),
     Parameter(ParameterError),
     Validation(ValidationError),
+    Control(ControlError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,6 +113,14 @@ impl PolarError {
     }
 }
 
+impl From<ControlError> for PolarError {
+    fn from(err: ControlError) -> Self {
+        Self {
+            kind: ErrorKind::Control(err),
+            context: None,
+        }
+    }
+}
 impl From<ParseError> for PolarError {
     fn from(err: ParseError) -> Self {
         Self {
@@ -175,6 +184,7 @@ impl fmt::Display for PolarError {
             ErrorKind::Operational(e) => write!(f, "{}", e)?,
             ErrorKind::Parameter(e) => write!(f, "{}", e)?,
             ErrorKind::Validation(e) => write!(f, "{}", e)?,
+            ErrorKind::Control(e) => write!(f, "{:?}", e)?,
         }
         if let Some(ref context) = self.context {
             write!(f, "{}", context)?;
@@ -410,6 +420,10 @@ impl fmt::Display for OperationalError {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ControlError {
+    Groundless,
+}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Parameter passed to FFI lib function is invalid.
 pub struct ParameterError(pub String);

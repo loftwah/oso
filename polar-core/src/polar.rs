@@ -330,7 +330,7 @@ impl Polar {
     }
 
     pub fn compile_js(&self) -> PolarResult<String> {
-        Ok(self.compile().0)
+        Ok(self.to_js())
     }
 
     pub fn build_filter_plan(
