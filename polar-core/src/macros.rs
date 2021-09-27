@@ -292,6 +292,12 @@ impl From<bool> for TestHelper<Value> {
     }
 }
 
+impl From<Term> for TestHelper<Value> {
+    fn from(other: Term) -> TestHelper<Value> {
+        other.value().clone().into()
+    }
+}
+
 impl From<InstanceLiteral> for TestHelper<Value> {
     fn from(other: InstanceLiteral) -> Self {
         Self(Value::Pattern(Pattern::Instance(other)))

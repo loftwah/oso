@@ -26,9 +26,7 @@ pub enum QueryEvent {
         runnable: Box<dyn Runnable>,
     },
 
-    Debug {
-        message: String,
-    },
+    Debug(String),
 
     MakeExternal {
         instance_id: u64,

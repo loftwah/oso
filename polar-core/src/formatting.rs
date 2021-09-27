@@ -33,7 +33,7 @@ impl Trace {
             }
         } else {
             let polar_str = match self.node {
-                Node::Rule(ref r) => vm.rule_source(r),
+                Node::Rule(ref r) => r.to_polar(),
                 Node::Term(ref t) => vm.term_source(t, false),
             };
             let indented = polar_str
@@ -233,7 +233,7 @@ pub mod display {
             }
 
             match self {
-                Goal::Isa { left, right } => {
+                Goal::Isa( left, right ) => {
                     write!(fmt, "Isa({}, {})", left.to_polar(), right.to_polar())
                 }
                 Goal::IsMoreSpecific { left, right, args } => write!(
@@ -270,9 +270,9 @@ pub mod display {
                     instance.to_polar(),
                     field.to_polar(),
                 ),
-                Goal::PopQuery { term } => write!(fmt, "PopQuery({})", term.to_polar()),
-                Goal::Query { term } => write!(fmt, "Query({})", term.to_polar()),
-                Goal::Run { .. } => write!(fmt, "Run(...)"),
+                Goal::PopQuery(term) => write!(fmt, "PopQuery({})", term.to_polar()),
+                Goal::Query(term) => write!(fmt, "Query({})", term.to_polar()),
+                Goal::Run(_) => write!(fmt, "Run(...)"),
                 Goal::FilterRules {
                     applicable_rules,
                     unfiltered_rules,
@@ -295,11 +295,11 @@ pub mod display {
                     outer,
                     inner,
                 ),
-                Goal::TraceRule { trace: _ } => write!(
+                Goal::TraceRule(_) => write!(
                     fmt,
                     "TraceRule(...)" // FIXME: draw trace?
                 ),
-                Goal::Unify { left, right } => {
+                Goal::Unify(left, right) => {
                     write!(fmt, "Unify({}, {})", left.to_polar(), right.to_polar())
                 }
                 g => write!(fmt, "{:?}", g),

@@ -35,7 +35,6 @@ pub struct Bsps {
 /// A variable is Partial if it is bound to other variables, or constrained.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VariableState {
-    Unbound,
     Bound(Term),
     Partial,
 }
@@ -94,23 +93,16 @@ impl<'a> Folder for Derefer<'a> {
 fn cycle_constraints(cycle: Vec<Symbol>) -> Operation {
     let mut constraints = op!(And);
     for (x, y) in cycle.iter().zip(cycle.iter().skip(1)) {
-        constraints.add_constraint(op!(Unify, term!(x.clone()), term!(y.clone())));
+        constraints.add_constraint(op!(Unify, Term::from(Value::Variable(x.clone())), term!(y.clone())));
     }
     constraints
 }
 
 impl From<Lookup<'_>> for VariableState {
-    fn from(other: Lookup) -> Self {
-        // We represent Cycles as a Partial VariableState. This information is not
-        // needed in the VM, so unbound could be an acceptable representation as well.
-        // The partial representation does not slow down the VM since grounding happens
-        // within BindingManager::bind. The fast path of `bind_variables` is still taken
-        // instead of running Operation::ground.
+    fn from(other: Lookup<'_>) -> Self {
         match other {
-            Lookup::Free(None) => VariableState::Unbound,
             Lookup::Bound(b) => VariableState::Bound(b.clone()),
-            Lookup::Cycle(_) |
-            Lookup::Free(Some(_)) => VariableState::Partial,
+            _ => VariableState::Partial,
         }
     }
 }
@@ -119,11 +111,10 @@ impl From<Lookup<'_>> for VariableState {
 ///
 /// Includes the Cycle representation in addition to VariableState.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Lookup<'a> {
+pub enum Lookup<'a> {
     Bound(&'a Term),
-    Cycle(Vec<Symbol>),
-    Free(Option<&'a Operation>),
-}
+    Partial(&'a Operation),
+    Cycle(Vec<Symbol>), }
 
 /// The `BindingManager` maintains associations between variables and values,
 /// and constraints.
@@ -143,119 +134,81 @@ enum Lookup<'a> {
 pub struct BindingManager {
     bindings: BindingStack,
     followers: HashMap<FollowerId, BindingManager>,
-    next_follower_id: FollowerId,
-}
+    next_follower_id: FollowerId, }
 
 // Public interface.
 impl BindingManager {
-    pub fn ground(&self, v: &Value) -> Option<&Value> {
-        v.as_symbol().map_or_else(|_| None, |s| match self._variable_state(s) {
-            Lookup::Bound(t) => Some(t.value()),
-            _ => None,
-        })
-    }
+    pub fn ground<'a>(&'a self, v: &'a Term) -> Option<&'a Term> {
+        match self.get(v) {
+            Some(Lookup::Bound(t)) => Some(t),
+            _ => None } }
 
-    pub fn is_ground(&self, v: &Value) -> bool {
-        self.ground(v).is_some()
-    }
-
-    pub fn new() -> Self {
-        Self::default()
-    }
+    pub fn is_ground(&self, v: &Term) -> bool {
+        self.ground(v).is_some() }
 
     /// Bind `var` to `val` in the expression `partial`.
     ///
     /// If the binding succeeds, the new expression is returned as a goal. Otherwise,
     /// an error is returned.
-    fn partial_bind(&mut self, partial: Operation, var: &Symbol, val: Term) -> PolarResult<Goal> {
-        match partial.ground(var, val.clone()) {
-            None => Err(PolarError::from(ControlError::Groundless)),
-            Some(grounded) => {
-                self.add_binding(var, val);
-                Ok(Goal::Query {
-                    term: grounded.into(),
-                })
-            }
-        }
-    }
-
-    // **** State Mutation ***
-
-    /// Bind `var` to `val`.
-    ///
-    /// If the binding succeeds, Ok with an optional goal is returned. The goal will be
-    /// present if the binding replaces a partial, which then needs to be reevaluated
-    /// to ensure compatibility.
-    ///
-    /// If the binding is *incompatible* an error is returned. A binding is considered
-    /// *incompatible* if either:
-    ///
-    /// 1. `var` is already bound to some value (rebindings are not allowed, even if the
-    ///    rebinding is to the same value).
-    /// 2. `var` is constrained, and the new binding of `val` is not compatible with those
-    ///    constraints (as determined by `Operation::ground()`)
-    ///
-    /// If a binding is compatible, it is recorded. If the binding was to a ground value,
-    /// subsequent calls to `variable_state` or `deep_deref` will return that value.
-    ///
-    /// If the binding was between two variables, the two will always have the same value
-    /// or constraints going forward. Further, a unification constraint is recorded between
-    /// the two variables.
-    ///
-    /// If either variable is bound in the future, both will be bound to that value
-    /// (`variable_state` and `deref` will return the same value).
-    ///
-    /// If a binding between two variables is made, and one is bound and the other unbound, the
-    /// unbound variable will take the value of the bound one.
-    pub fn bind(&mut self, var: &Symbol, val: Term) -> PolarResult<Option<Goal>> {
-        let mut goal = None;
-        if let Ok(symbol) = val.value().as_symbol() {
-            goal = self.bind_variables(var, symbol)?;
-        } else {
-            match self._variable_state(var) {
-                Lookup::Free(Some(p)) => {
-                    let p = p.clone();
-                    let val = val.clone();
-                    goal = Some(self.partial_bind(p, var, val)?)
-                }
-
-                Lookup::Bound(_) => {
-                    return Err(RuntimeError::IncompatibleBindings {
-                        msg: format!("Cannot rebind {:?}", var),
-                    }
-                    .into())
-                }
-                _ => self.add_binding(var, val.clone()),
-            }
-        }
-
-        // If the main binding succeeded, the follower binding must succeed.
-        self.do_followers(|_, follower| {
-            follower.bind(var, val.clone())?;
-            Ok(())
-        })
-        .unwrap();
-
-        Ok(goal)
-    }
-
-    /// Rebind `var` to `val`, regardless of compatibility.
-    ///
-    /// A rebinding is only allowed if a variable is unbound, or already bound.
-    ///
-    /// Constrained variables, or variables that have been bound with other variables
-    /// cannot be rebound.
-    ///
-    /// Note: Rebinding a variable that has been previously bound to other variables will place the
-    /// BindingManager in an invalid state. For this reason, rebinding should be used with care.
-    ///
-    /// (The only current usage is for replacing default values with call ids).
-    pub fn unsafe_rebind(&mut self, var: &Symbol, val: Term) {
-        assert!(matches!(
-            self._variable_state(var),
-            Lookup::Free(None) | Lookup::Bound(_)
-        ));
+    fn addl_binding(&mut self, partial: Operation, var: &Symbol, val: Term) -> PolarResult<Goal> {
         self.add_binding(var, val);
+        Ok(Goal::Query(Term::from(partial)))
+    }
+
+    fn coconstrain(&mut self, a: &Term, b: &Term) -> PolarResult<()> {
+        self.add_constraint(&Term::from(op!(Unify, a.clone(), b.clone()))) }
+
+
+    pub fn bind(&mut self, lhs: &Term, val: Term) -> PolarResult<Option<Goal>> {
+        fn as_sym<'a>(t: &'a Term) -> &'a Symbol {
+            t.value().as_symbol().unwrap() }
+        let mut goals: Vec<Goal> = vec![];
+        let rhs = self.get(&val);
+
+        match (self.get(lhs), rhs) {
+            // left free, right free
+            (None, None) => {
+                let (lhs, rhs) = (as_sym(lhs), val.clone());
+                self.add_binding(lhs, rhs) }
+
+            // left bound, right bound
+            (Some(Lookup::Bound(a)), Some(Lookup::Bound(b))) =>
+                if a == b { }
+                else { return Err(PolarError{ kind: ErrorKind::Control, context: None }) },
+
+            // left free, right bound
+            (None, Some(Lookup::Bound(val))) => { // one side bound, other side free
+                let (lhs, rhs) = (as_sym(lhs), val.clone());
+                self.add_binding(lhs, rhs) }
+            // right free, left bound
+            (Some(Lookup::Bound(to)), None) => {
+                let (lhs, rhs) = (as_sym(&val), to.clone());
+                self.add_binding(lhs, rhs) }
+
+            // left constrained, right bound
+            (Some(Lookup::Partial(p)), Some(Lookup::Bound(b))) => {
+                let (p, b) = (p.clone(), b.clone());
+                goals.push(self.addl_binding(p, as_sym(lhs), b)?) }
+            (Some(Lookup::Cycle(p)), Some(Lookup::Bound(b))) => {
+                let (p, b) = (cycle_constraints(p), b.clone());
+                goals.push(self.addl_binding(p, as_sym(lhs), b)?) }
+
+            // right constrained, left bound
+            (Some(Lookup::Bound(b)), Some(Lookup::Partial(p))) => {
+                let (p, rhs, b) = (p.clone(), as_sym(&val), b.clone());
+                goals.push(self.addl_binding(p, rhs, b)?) }
+            (Some(Lookup::Bound(b)), Some(Lookup::Cycle(p))) => {
+                let (p, rhs, b) = (cycle_constraints(p), as_sym(&val), b.clone());
+                goals.push(self.addl_binding(p, rhs, b)?) }
+
+            // at least one side is constrained, and RHS is definitely a symbol
+            _ => self.coconstrain(lhs, &val).map(|_| ())?,
+        };
+
+        self.do_followers(|_, follower| {
+            follower.bind(lhs, val.clone()).map(|_| ()) })?;
+
+        Ok(goals.pop())
     }
 
     /// Add a constraint. Constraints are represented as term expressions.
@@ -271,11 +224,11 @@ impl BindingManager {
 
         // include all constraints applying to any of its variables.
         for var in op.variables().iter().rev() {
-            match self._variable_state(var) {
-                Lookup::Cycle(c) => {
+            match self.get(&Term::from(var.clone())) {
+                Some(Lookup::Cycle(c)) => {
                     op = cycle_constraints(c).merge_constraints(op)
                 }
-                Lookup::Free(Some(e)) => op = e.clone().merge_constraints(op),
+                Some(Lookup::Partial(e)) => op = e.clone().merge_constraints(op),
                 _ => {}
             }
         }
@@ -285,7 +238,7 @@ impl BindingManager {
 
         // replace any bound variables with their values.
         for var in vars.iter() {
-            if let Lookup::Bound(val) = self._variable_state(var) {
+            if let Some(Lookup::Bound(val)) = self.get(&Term::from(var.clone())) {
                 varset.remove(var);
                 match op.ground(var, val.clone()) {
                     Some(o) => op = o,
@@ -318,51 +271,46 @@ impl BindingManager {
         })
         .unwrap();
 
-        self.bindings.truncate(to.bindings_index)
-    }
+        self.bindings.truncate(to.bindings_index) }
 
     // *** Binding Inspection ***
     /// Dereference all variables in term, including within nested structures like
     /// lists and dictionaries.
-    pub fn deep_deref(&self, term: &Term) -> Term {
-        Derefer::new(self).fold_term(term.clone())
-    }
+    pub fn deref(&self, term: &Term) -> Term {
+        Derefer::new(self).fold_term(term.clone()) }
 
     /// Get constraints on variable `variable`. If the variable is in a cycle,
     /// the cycle is expressed as a partial.
     pub fn get_constraints(&self, variable: &Symbol) -> Operation {
-        match self._variable_state(variable) {
-            Lookup::Free(None) => op!(And),
-            Lookup::Bound(val) => {
+        match self.get(&Term::from(variable.clone())) {
+            None => op!(And),
+            Some(Lookup::Bound(val)) => {
                 op!(And, term!(op!(Unify, term!(variable.clone()), val.clone())))
             }
-            Lookup::Free(Some(expr)) => expr.clone(),
-            Lookup::Cycle(c) => cycle_constraints(c),
-        }
-    }
+            Some(Lookup::Partial(expr)) => expr.clone(),
+            Some(Lookup::Cycle(c)) => cycle_constraints(c), } }
 
-    pub fn variable_state(&self, variable: &Symbol) -> VariableState {
-        self.variable_state_at_point(variable, &self.bsp())
-    }
+    pub fn variable_state(&self, variable: &Symbol) -> Option<VariableState> {
+        self.variable_state_at_point(variable, &self.bsp()) }
 
-    pub fn variable_state_at_point(&self, variable: &Symbol, bsp: &Bsp) -> VariableState {
+    pub fn variable_state_at_point(&self, variable: &Symbol, bsp: &Bsp) -> Option<VariableState> {
         let index = bsp.bindings_index;
         let mut next = variable;
         while let Some(value) = self.value(next, index) {
             match value.value() {
-                Value::Expression(_) => return VariableState::Partial,
+                Value::Expression(_) =>
+                    return Some(VariableState::Partial),
                 Value::Variable(v) | Value::RestVariable(v) => {
                     if v == variable {
-                        return VariableState::Partial;
+                        return Some(VariableState::Partial);
                     } else {
                         next = v;
                     }
                 }
-                _ => return VariableState::Bound(value.clone()),
+                _ => return Some(VariableState::Bound(value.clone())),
             }
         }
-        VariableState::Unbound
-    }
+        None }
 
     /// Return all variables used in this binding manager.
     pub fn variables(&self) -> HashSet<Symbol> {
@@ -397,7 +345,7 @@ impl BindingManager {
             if !include_temps && var.is_temporary_var() {
                 continue;
             }
-            bindings.insert(var.clone(), self.deep_deref(value));
+            bindings.insert(var.clone(), self.deref(value));
         }
         bindings
     }
@@ -407,7 +355,7 @@ impl BindingManager {
         for var in variables.iter() {
             let value = self.value(var, self.bsp().bindings_index);
             if let Some(value) = value {
-                bindings.insert(var.clone(), self.deep_deref(value));
+                bindings.insert(var.clone(), self.deref(value));
             }
         }
         bindings
@@ -436,160 +384,59 @@ impl BindingManager {
 // Private impls.
 impl BindingManager {
     /// Bind two variables together.
-    fn bind_variables(&mut self, left: &Symbol, right: &Symbol) -> PolarResult<Option<Goal>> {
-        let mut goal = None;
-        match (self._variable_state(left), self._variable_state(right)) {
-            (Lookup::Bound(a), Lookup::Bound(b)) if a != b=> {
-                return Err(RuntimeError::IncompatibleBindings {
-                    msg: format!("{} and {} are both bound", left, right),
-                }
-                .into());
-            }
-
-            (
-                Lookup::Bound(left),
-                Lookup::Free(None),
-            ) => {
-                let left = left.clone();
-                self.add_binding(right, left);
-            }
-            (
-                Lookup::Free(None),
-                Lookup::Bound(right),
-            ) => {
-                let right = right.clone();
-                self.add_binding(left, right);
-            }
-
-            // Cycles: one or more variables are bound together.
-            (Lookup::Free(None),
-             Lookup::Free(None)) => if left != right {
-                // Both variables are unbound. Bind them in a new cycle,
-                // but do not create 1-cycles.
-                self.add_binding(left, term!(right.clone()));
-                self.add_binding(right, term!(left.clone()));
-            }
-            (Lookup::Cycle(cycle), Lookup::Free(None)) => {
-                // Left is in a cycle. Extend it to include right.
-                let last = cycle.last().unwrap();
-                assert_ne!(last, left);
-                self.add_binding(last, term!(right.clone()));
-                self.add_binding(right, term!(left.clone()));
-            }
-            (Lookup::Free(None), Lookup::Cycle(cycle)) => {
-                // Right is in a cycle. Extend it to include left.
-                let last = cycle.last().unwrap();
-                assert_ne!(last, right);
-                self.add_binding(last, term!(left.clone()));
-                self.add_binding(left, term!(right.clone()));
-            }
-            (
-                Lookup::Cycle(left_cycle),
-                Lookup::Cycle(right_cycle),
-            ) => {
-                // Both variables are in cycles.
-                let iter_left = left_cycle.iter().collect::<HashSet<&Symbol>>();
-                let iter_right = right_cycle.iter().collect::<HashSet<&Symbol>>();
-                if iter_left.intersection(&iter_right).next().is_some() {
-                    // The cycles must be the same. Do nothing.
-                    assert_eq!(iter_left, iter_right);
-                } else {
-                    // Join the two cycles.
-                    let last_left = left_cycle.last().unwrap();
-                    let last_right = right_cycle.last().unwrap();
-                    assert_ne!(last_left, left);
-                    assert_ne!(last_right, right);
-                    self.add_binding(last_left, term!(right.clone()));
-                    self.add_binding(last_right, term!(left.clone()));
-                }
-            }
-            (
-                Lookup::Cycle(_),
-                Lookup::Bound(right),
-            ) => {
-                let right = right.clone();
-                self.add_binding(left, right);
-            }
-            (
-                Lookup::Bound(left),
-                Lookup::Cycle(_),
-            ) => {
-                let left = left.clone();
-                self.add_binding(right, left);
-            }
-            (
-                Lookup::Bound(left),
-                Lookup::Free(Some(p)),
-            ) => {
-                let (p, left) = (p.clone(), left.clone());
-                goal = Some(self.partial_bind(p, right, left)?);
-            }
-            (
-                Lookup::Free(Some(p)),
-                Lookup::Bound(right),
-            ) => {
-                let (p, right) = (p.clone(), right.clone());
-                goal = Some(self.partial_bind(p, left, right)?);
-            }
-            (Lookup::Free(Some(_)), _)
-            | (_, Lookup::Free(Some(_))) => {
-                self.add_constraint(&op!(Unify, term!(left.clone()), term!(right.clone())).into())?;
-            }
-            _ => (),
-        }
-
-        Ok(goal)
-    }
-
-    fn add_binding(&mut self, var: &Symbol, val: Term) {
+    pub fn add_binding(&mut self, var: &Symbol, val: Term) {
         self.bindings.push(Binding(var.clone(), val));
     }
 
+
     fn lookup(&self, var: &Symbol) -> Option<Term> {
         match self.variable_state(var) {
-            VariableState::Bound(val) => Some(val),
+            Some(VariableState::Bound(val)) => Some(val),
             _ => None,
         }
     }
 
     /// Look up a variable in the bindings stack and return
     /// a reference to its value if it's bound.
-    fn value(&self, variable: &Symbol, bsp: usize) -> Option<&Term> {
+    fn value<'a>(&'a self, var: &Symbol, bsp: usize) -> Option<&'a Term> {
         self.bindings[..bsp]
             .iter()
             .rev()
-            .find(|Binding(var, _)| var == variable)
-            .map(|Binding(_, val)| val)
+            .find_map(|Binding(key, val)| (var == key).then(|| val))
     }
 
-    fn _variable_state(&self, variable: &Symbol) -> Lookup {
-        self._variable_state_at_point(variable, &self.bsp())
+    pub fn get<'a>(&'a self, t: &'a Term) -> Option<Lookup<'a>> {
+        match t.value() {
+            Value::Variable(y) | Value::RestVariable(y) =>
+                self.value(y, self.bsp().bindings_index)
+                    .and_then(|t| self.get(t)),
+            _ => Some(Lookup::Bound(t)), } }
+
+    fn _variable_state<'a>(&'a self, y: &Symbol) -> Option<Lookup<'a>> {
+        self._variable_state_at_point(y, &self.bsp())
     }
 
     /// Check the state of `variable` at `bsp`.
-    fn _variable_state_at_point(
-        &self,
+    fn _variable_state_at_point<'a>(
+        &'a self,
         variable: &Symbol,
         bsp: &Bsp,
-    ) -> Lookup {
+    ) -> Option<Lookup<'a>> {
         let index = bsp.bindings_index;
         let mut path = vec![variable];
         while let Some(value) = self.value(path.last().unwrap(), index) {
             match value.value() {
-                Value::Expression(e) => return Lookup::Free(Some(e)),
-                Value::Variable(v) | Value::RestVariable(v) => {
+                Value::Expression(e) => return Some(Lookup::Partial(e)),
+                Value::Variable(v) | Value::RestVariable(v) =>
                     if v == variable {
-                        return Lookup::Cycle(
-                            path.into_iter().cloned().collect(),
-                        );
+                        return Some(Lookup::Cycle( path.into_iter().cloned().collect(),));
                     } else {
-                        path.push(v);
+                        path.push(&v);
                     }
-                }
-                _ => return Lookup::Bound(value),
+                _ => return Some(Lookup::Bound(value)),
             }
         }
-        Lookup::Free(None)
+        None
     }
 
     fn do_followers<F>(&mut self, mut func: F) -> PolarResult<()>
@@ -608,142 +455,113 @@ impl BindingManager {
 mod test {
     use super::*;
     use crate::formatting::to_polar::ToPolarString;
+    type TestResult = PolarResult<()>;
 
     #[test]
     fn variable_state() {
-        let mut bindings = BindingManager::new();
+        let mut bindings = BindingManager::default();
 
         let x = sym!("x");
         let y = sym!("y");
         let z = sym!("z");
 
         // Unbound.
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Free(None)
-        );
+        assert_eq!( bindings._variable_state(&x), None,);
 
         // Bound.
         bindings.add_binding(&x, term!(1));
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Bound(&term!(1))
-        );
+        assert_eq!( bindings._variable_state(&x), Some(Lookup::Bound(&term!(1))));
 
         bindings.add_binding(&x, term!(x.clone()));
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Cycle(vec![x.clone()])
-        );
+        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone()])));
 
         // 2-cycle.
         bindings.add_binding(&x, term!(y.clone()));
         bindings.add_binding(&y, term!(x.clone()));
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Cycle(vec![x.clone(), y.clone()])
-        );
-        assert_eq!(
-            bindings._variable_state(&y),
-            Lookup::Cycle(vec![y.clone(), x.clone()])
-        );
+        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone(), y.clone()])));
+        assert_eq!( bindings._variable_state(&y), Some(Lookup::Cycle(vec![y.clone(), x.clone()])));
 
         // 3-cycle.
         bindings.add_binding(&x, term!(y.clone()));
         bindings.add_binding(&y, term!(z.clone()));
         bindings.add_binding(&z, term!(x.clone()));
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Cycle(vec![x.clone(), y.clone(), z.clone()])
-        );
-        assert_eq!(
-            bindings._variable_state(&y),
-            Lookup::Cycle(vec![y.clone(), z.clone(), x.clone()])
-        );
-        assert_eq!(
-            bindings._variable_state(&z),
-            Lookup::Cycle(vec![z.clone(), x.clone(), y])
-        );
+        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone(), y.clone(), z.clone()])));
+        assert_eq!( bindings._variable_state(&y), Some(Lookup::Cycle(vec![y.clone(), z.clone(), x.clone()])));
+        assert_eq!( bindings._variable_state(&z), Some(Lookup::Cycle(vec![z.clone(), x.clone(), y])));
 
         // Expression.
         bindings.add_binding(&x, term!(op!(And)));
-        assert_eq!(
-            bindings._variable_state(&x),
-            Lookup::Free(Some(&op!(And)))
-        );
+        assert_eq!( bindings._variable_state(&x), Some(Lookup::Partial(&op!(And))));
     }
 
     #[test]
     fn test_followers() {
         // Regular bindings
-        let mut b1 = BindingManager::new();
-        b1.bind(&sym!("x"), term!(1)).unwrap();
-        b1.bind(&sym!("y"), term!(2)).unwrap();
+        let mut b1 = BindingManager::default();
+        b1.bind(&var!("x"), term!(1)).unwrap();
+        b1.bind(&var!("y"), term!(2)).unwrap();
 
         assert_eq!(
             b1._variable_state(&sym!("x")),
-            Lookup::Bound(&term!(1))
+            Some(Lookup::Bound(&term!(1)))
         );
         assert_eq!(
             b1._variable_state(&sym!("y")),
-            Lookup::Bound(&term!(2))
+            Some(Lookup::Bound(&term!(2)))
         );
 
-        let b2 = BindingManager::new();
+        let b2 = BindingManager::default();
         let b2_id = b1.add_follower(b2);
 
-        b1.bind(&sym!("z"), term!(3)).unwrap();
+        b1.bind(&var!("z"), term!(3)).unwrap();
 
         assert_eq!(
             b1._variable_state(&sym!("x")),
-            Lookup::Bound(&term!(1))
+            Some(Lookup::Bound(&term!(1)))
         );
         assert_eq!(
             b1._variable_state(&sym!("y")),
-            Lookup::Bound(&term!(2))
+            Some(Lookup::Bound(&term!(2)))
         );
         assert_eq!(
             b1._variable_state(&sym!("z")),
-            Lookup::Bound(&term!(3))
+            Some(Lookup::Bound(&term!(3)))
         );
 
         let b2 = b1.remove_follower(&b2_id).unwrap();
         assert_eq!(
             b2._variable_state(&sym!("x")),
-            Lookup::Free(None)
+            None
         );
         assert_eq!(
             b2._variable_state(&sym!("y")),
-            Lookup::Free(None)
+            None
         );
-        assert_eq!(
-            b2._variable_state(&sym!("z")),
-            Lookup::Bound(&term!(3))
-        );
+        assert_eq!( b2._variable_state(&sym!("z")), Some(Lookup::Bound(&term!(3))));
 
         // Extending cycle.
-        let mut b1 = BindingManager::new();
-        b1.bind(&sym!("x"), term!(sym!("y"))).unwrap();
-        b1.bind(&sym!("x"), term!(sym!("z"))).unwrap();
+        let mut b1 = BindingManager::default();
+        b1.bind(&var!("x"), var!("y")).unwrap();
+        b1.bind(&var!("x"), var!("z")).unwrap();
 
-        let b2 = BindingManager::new();
+        let b2 = BindingManager::default();
         let b2_id = b1.add_follower(b2);
 
         assert!(matches!(
             b1._variable_state(&sym!("x")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
         assert!(matches!(
             b1._variable_state(&sym!("y")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
         assert!(matches!(
             b1._variable_state(&sym!("z")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
 
-        b1.bind(&sym!("x"), term!(sym!("a"))).unwrap();
-        if let Lookup::Cycle(c) = b1._variable_state(&sym!("a")) {
+        b1.bind(&var!("x"), var!("a")).unwrap();
+        if let Some(Lookup::Cycle(c)) = b1._variable_state(&sym!("a")) {
             assert_eq!(
                 c,
                 vec![sym!("a"), sym!("x"), sym!("y"), sym!("z")],
@@ -753,36 +571,36 @@ mod test {
         }
 
         let b2 = b1.remove_follower(&b2_id).unwrap();
-        if let Lookup::Cycle(c) = b2._variable_state(&sym!("a")) {
+        if let Some(Lookup::Cycle(c)) = b2._variable_state(&sym!("a")) {
             assert_eq!(c, vec![sym!("a"), sym!("x")], "c was {:?}", c);
         } else {
             panic!("unexpected");
         }
-        if let Lookup::Cycle(c) = b2._variable_state(&sym!("x")) {
+        if let Some(Lookup::Cycle(c)) = b2._variable_state(&sym!("x")) {
             assert_eq!(c, vec![sym!("x"), sym!("a")], "c was {:?}", c);
         } else {
             panic!("unexpected");
         }
 
         // Adding constraints to cycles.
-        let mut b1 = BindingManager::new();
-        b1.bind(&sym!("x"), term!(sym!("y"))).unwrap();
-        b1.bind(&sym!("x"), term!(sym!("z"))).unwrap();
+        let mut b1 = BindingManager::default();
+        b1.bind(&var!("x"), var!("y")).unwrap();
+        b1.bind(&var!("x"), var!("z")).unwrap();
 
-        let b2 = BindingManager::new();
+        let b2 = BindingManager::default();
         let b2_id = b1.add_follower(b2);
 
         assert!(matches!(
             b1._variable_state(&sym!("x")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
         assert!(matches!(
             b1._variable_state(&sym!("y")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
         assert!(matches!(
             b1._variable_state(&sym!("z")),
-            Lookup::Cycle(_)
+            Some(Lookup::Cycle(_))
         ));
 
         b1.add_constraint(&term!(op!(Gt, term!(sym!("x")), term!(sym!("y")))))
@@ -790,13 +608,13 @@ mod test {
 
         let b2 = b1.remove_follower(&b2_id).unwrap();
 
-        if let Lookup::Free(Some(p)) = b1._variable_state(&sym!("x")) {
+        if let Some(Lookup::Partial(p)) = b1._variable_state(&sym!("x")) {
             assert_eq!(p.to_polar(), "x = y and y = z and z = x and x > y");
         } else {
             panic!("unexpected");
         }
 
-        if let Lookup::Free(Some(p)) = b2._variable_state(&sym!("x")) {
+        if let Some(Lookup::Partial(p)) = b2._variable_state(&sym!("x")) {
             assert_eq!(p.to_polar(), "x > y");
         } else {
             panic!("unexpected");
@@ -804,52 +622,47 @@ mod test {
     }
 
     #[test]
-    fn old_deref() {
+    fn old_deref() -> TestResult {
         let mut bm = BindingManager::default();
-        let value = term!(1);
-        let x = sym!("x");
-        let y = sym!("y");
-        let term_x = term!(x.clone());
-        let term_y = term!(y.clone());
+        let (x, y, z) = (var!("x"), var!("y"), term!(1));
 
         // unbound var
-        assert_eq!(bm.deep_deref(&term_x), term_x);
+        assert_eq!(bm.deref(&x), x);
 
         // unbound var -> unbound var
-        bm.bind(&x, term_y.clone()).unwrap();
-        assert_eq!(bm.deep_deref(&term_x), term_x);
+        bm.bind(&x, y.clone())?;
+        assert_eq!(bm.deref(&x), x);
 
         // value
-        assert_eq!(bm.deep_deref(&value), value.clone());
+        assert_eq!(bm.deref(&z), z.clone());
 
         // unbound var -> value
-        let mut bm = BindingManager::default();
-        bm.bind(&x, value.clone()).unwrap();
-        assert_eq!(bm.deep_deref(&term_x), value);
+        bm.bind(&x, z.clone()).unwrap();
+        assert_eq!(bm.deref(&x), z);
 
         // unbound var -> unbound var -> value
-        let mut bm = BindingManager::default();
-        bm.bind(&x, term_y).unwrap();
-        bm.bind(&y, value.clone()).unwrap();
-        assert_eq!(bm.deep_deref(&term_x), value);
+        bm.bind(&x, y.clone()).unwrap();
+        bm.bind(&y, z.clone()).unwrap();
+        assert_eq!(bm.deref(&x), z);
+        Ok(())
     }
 
     #[test]
-    fn deep_deref() {
+    fn deref() {
         let mut bm = BindingManager::default();
         let one = term!(1);
         let two = term!(1);
-        let one_var = sym!("one");
-        let two_var = sym!("two");
+        let one_var = var!("one");
+        let two_var = var!("two");
         bm.bind(&one_var, one.clone()).unwrap();
         bm.bind(&two_var, two.clone()).unwrap();
         let dict = btreemap! {
-            sym!("x") => term!(one_var),
-            sym!("y") => term!(two_var),
+            sym!("x") => one_var.clone(),
+            sym!("y") => two_var.clone(),
         };
         let list = term!([dict]);
         assert_eq!(
-            bm.deep_deref(&list).value().clone(),
+            bm.deref(&list).value().clone(),
             Value::List(vec![term!(btreemap! {
                 sym!("x") => one,
                 sym!("y") => two,
@@ -859,23 +672,23 @@ mod test {
 
     #[test]
     fn bind() {
-        let x = sym!("x");
-        let y = sym!("y");
+        let x = var!("x");
+        let y = var!("y");
         let zero = term!(0);
         let mut bm = BindingManager::default();
         bm.bind(&x, zero.clone()).unwrap();
-        assert_eq!(bm.variable_state(&x), VariableState::Bound(zero));
-        assert_eq!(bm.variable_state(&y), VariableState::Unbound);
+        assert_eq!(bm.variable_state(x.value().as_symbol().unwrap()), Some(VariableState::Bound(zero)));
+        assert_eq!(bm.variable_state(y.value().as_symbol().unwrap()), None);
     }
 
     #[test]
     fn test_backtrack_followers() {
         // Regular bindings
-        let mut b1 = BindingManager::new();
-        b1.bind(&sym!("x"), term!(sym!("y"))).unwrap();
-        b1.bind(&sym!("z"), term!(sym!("x"))).unwrap();
+        let mut b1 = BindingManager::default();
+        b1.bind(&var!("x"), var!("y")).unwrap();
+        b1.bind(&var!("z"), var!("x")).unwrap();
 
-        let b2 = BindingManager::new();
+        let b2 = BindingManager::default();
         let b2_id = b1.add_follower(b2);
 
         b1.add_constraint(&term!(op!(Gt, term!(sym!("x")), term!(1))))
@@ -883,17 +696,17 @@ mod test {
 
         let bsp = b1.bsp();
 
-        b1.bind(&sym!("a"), term!(sym!("x"))).unwrap();
+        b1.bind(&var!("a"), term!(sym!("x"))).unwrap();
         assert!(matches!(
             b1.variable_state(&sym!("a")),
-            VariableState::Partial
+            Some(VariableState::Partial),
         ));
 
         b1.backtrack(&bsp);
         let b2 = b1.remove_follower(&b2_id).unwrap();
         assert!(matches!(
             b2.variable_state(&sym!("a")),
-            VariableState::Unbound
+            None,
         ));
     }
 }

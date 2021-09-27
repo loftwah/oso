@@ -3,7 +3,6 @@ use std::collections::HashSet;
 use crate::folder::{fold_operation, fold_term, Folder};
 use crate::terms::{Operation, Operator, Symbol, Term, Value};
 use crate::visitor::{walk_operation, Visitor};
-use crate::vm::compare;
 
 /// A trivially true expression.
 pub const TRUE: Operation = op!(And);
@@ -166,7 +165,7 @@ impl Operation {
                             | (Value::Boolean(_), Value::Number(_))
                             | (Value::Boolean(_), Value::Boolean(_))
                             | (Value::String(_), Value::String(_)) => {
-                                if compare(o.operator, &left, &right).unwrap() {
+                                if o.operator.cmp(left.value(), right.value()).unwrap() {
                                     TRUE
                                 } else {
                                     self.consistent = false;

@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::rc::Rc;
 
-use super::error::{PolarError, PolarResult};
+use super::error::{PolarError};
 use super::formatting::{source_lines, ToPolarString};
 use super::partial::simplify_bindings;
 use super::sources::*;
@@ -23,35 +23,19 @@ impl PolarVirtualMachine {
         let query_str = query.to_polar();
         format!("QUERY: {}, BINDINGS: {{{}}}", query_str, bindings_str)
     }
-
-    /// If the inner [`Debugger`](struct.Debugger.html) returns a [`Goal`](../vm/enum.Goal.html),
-    /// push it onto the goal stack.
-    pub fn maybe_break(&mut self, event: DebugEvent) -> PolarResult<bool> {
-        self.debugger.maybe_break(event, self).map_or_else(
-            || Ok(false),
-            |goal| {
-                self.push_goal(goal)?;
-                Ok(true)
-            },
-        )
-    }
 }
 
 /// [`Debugger`](struct.Debugger.html) step granularity.
 #[derive(Clone, Debug)]
-enum Step {
+pub enum Step {
     /// Pause after evaluating the next [`Goal`](../vm/enum.Goal.html).
     Goal,
     /// Step **over** the current query. Will break on the next query where the trace stack is at the same
     /// level as the current one.
-    Over {
-        level: usize,
-    },
+    Over(usize),
     /// Step **out** of the current query. Will break on the next query where the trace stack is at a lower
     /// level than the current one.
-    Out {
-        level: usize,
-    },
+    Out(usize),
     /// Step **in**. Will break on the next query.
     Into,
     Error,
@@ -82,7 +66,7 @@ pub struct Debugger {
     /// - `None`: Don't stop.
     /// - `Some(step)`: View the stopping logic in
     ///   [`maybe_break`](struct.Debugger.html#method.maybe_break).
-    step: Option<Step>,
+    pub step: Option<Step>,
     last: Option<String>,
 }
 
@@ -99,44 +83,6 @@ impl Debugger {
             )
     }
 
-    /// When the [`VM`](../vm/struct.PolarVirtualMachine.html) hits a breakpoint, check if
-    /// evaluation should pause.
-    ///
-    /// The check is a comparison of the [`Debugger`](struct.Debugger.html)'s
-    /// [`step`](struct.Debugger.html#structfield.step) field with the passed-in
-    /// [`DebugEvent`](enum.DebugEvent.html). If [`step`](struct.Debugger.html#structfield.step) is
-    /// set to `None`, evaluation continues. For details about how the `Some()` values of
-    /// [`step`](struct.Debugger.html#structfield.step) are handled, see the explanations in the
-    /// [`Step`](enum.Step.html) documentation.
-    ///
-    /// ## Returns
-    ///
-    /// - `Some(Goal::Debug { message })` -> Pause evaluation.
-    /// - `None` -> Continue evaluation.
-    fn maybe_break(&self, event: DebugEvent, vm: &PolarVirtualMachine) -> Option<Goal> {
-        self.step.as_ref().and_then(|step| match (step, event) {
-            (Step::Goal, DebugEvent::Goal(goal)) => Some(Goal::Debug {
-                message: goal.to_string(),
-            }),
-            (Step::Into, DebugEvent::Query) => self.break_query(vm),
-            (Step::Out { level }, DebugEvent::Query)
-                if vm.trace_stack.is_empty() || vm.trace_stack.len() < *level =>
-            {
-                self.break_query(vm)
-            }
-            (Step::Over { level }, DebugEvent::Query) if vm.trace_stack.len() == *level => {
-                self.break_query(vm)
-            }
-            (Step::Error, DebugEvent::Error(error)) => {
-                self.break_msg(vm).map(|message| Goal::Debug {
-                    message: format!("{}\nERROR: {}\n", message, error.to_string()),
-                })
-            }
-            (Step::Rule, DebugEvent::Rule) => self.break_query(vm),
-            _ => None,
-        })
-    }
-
     pub fn break_msg(&self, vm: &PolarVirtualMachine) -> Option<String> {
         vm.trace.last().and_then(|trace| match trace.node {
             Node::Term(ref q) => match q.value() {
@@ -149,14 +95,8 @@ impl Debugger {
                     Some(format!("{}\n\n{}\n", vm.query_summary(q), source))
                 }
             },
-            Node::Rule(ref r) => Some(vm.rule_source(r)),
+            Node::Rule(ref r) => Some(r.to_polar()),
         })
-    }
-
-    /// Produce the `Goal::Debug` for breaking on a Query (as opposed to breaking on a Goal).
-    /// This is used to implement the `step`, `over`, and `out` debug commands.
-    fn break_query(&self, vm: &PolarVirtualMachine) -> Option<Goal> {
-        self.break_msg(vm).map(|message| Goal::Debug { message })
     }
 
     /// Process debugging commands from the user.
@@ -175,13 +115,13 @@ impl Debugger {
         where
             T: std::fmt::Display,
         {
-            Goal::Debug {
-                message: stack
+            Goal::Debug(
+                stack
                     .iter()
                     .map(ToString::to_string)
                     .collect::<Vec<_>>()
                     .join("\n"),
-            }
+            )
         }
         let parts: Vec<&str> = command.split_whitespace().collect();
         let default_command = match self.last.take() {
@@ -194,13 +134,13 @@ impl Debugger {
             "c" | "continue" | "q" | "quit" => self.step = None,
 
             "n" | "next" | "over" => {
-                self.step = Some(Step::Over{ level: vm.trace_stack.len() })
+                self.step = Some(Step::Over(vm.trace_stack.len()))
             }
             "s" | "step" | "into" => {
                 self.step = Some(Step::Into)
             }
             "o" | "out" => {
-                self.step = Some(Step::Out{ level: vm.trace_stack.len() })
+                self.step = Some(Step::Out(vm.trace_stack.len()))
             }
             "g" | "goal" => {
                 self.step = Some(Step::Goal)
@@ -213,12 +153,10 @@ impl Debugger {
             }
             "l" | "line" => {
                 let lines = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                return Some(Goal::Debug {
-                    message: vm.queries.last().map_or_else(
+                return Some(Goal::Debug(
+                    vm.queries.last().map_or_else(
                         || "".to_string(),
-                        |query| self.query_source(query, &vm.kb.read().unwrap().sources, lines),
-                    ),
-                });
+                        |query| self.query_source(query, &vm.kb.read().unwrap().sources, lines))));
             }
             "query" => {
                 let mut level = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -227,7 +165,7 @@ impl Debugger {
                 // Walk up the trace stack to get the query at the requested level.
                 let mut term = vm.trace.last().and_then(|t| t.term());
                 while level > 0 {
-                    if let Some(trace) = trace_stack.pop().map(|ts| ts.as_ref().clone()) {
+                    if let Some(trace) = trace_stack.pop() {
                         if let Some(t) = trace.last() {
                             if let Trace{node: Node::Term(t), ..} = &**t {
                                 term = Some(t.clone());
@@ -235,19 +173,14 @@ impl Debugger {
                             }
                         }
                     } else {
-                        return Some(Goal::Debug {
-                            message: "Error: level is out of range".to_owned()
-                        })
+                        return Some(Goal::Debug("Error: level is out of range".to_owned()))
                     }
                 }
 
                 if let Some(query) = term {
-                    return Some(Goal::Debug {
-                        message: vm.query_summary(&query)});
+                    return Some(Goal::Debug(vm.query_summary(&query)))
                 } else {
-                    return Some(Goal::Debug {
-                        message: "".to_owned()
-                    })
+                    return Some(Goal::Debug(String::new()))
                 }
             }
             "stack" | "trace" => {
@@ -260,7 +193,6 @@ impl Debugger {
                     stack.push(t.clone());
                     trace = trace_stack
                         .pop()
-                        .map(|ts| ts.as_ref().clone())
                         .unwrap_or_else(Vec::new);
                 }
 
@@ -303,9 +235,7 @@ impl Debugger {
                     }
                 }
 
-                return Some(Goal::Debug {
-                    message: st
-                })
+                return Some(Goal::Debug(st))
             }
             "goals" => return Some(show(&vm.goals)),
             "bindings" => {
@@ -347,12 +277,12 @@ impl Debugger {
                     if vars.is_empty() {
                         vars = "No variables in scope.".to_string();
                     }
-                    return Some(Goal::Debug { message: vars });
+                    return Some(Goal::Debug(vars))
                 }
             }
-            _ => {
-                return Some(Goal::Debug {
-                    message: "Debugger Commands
+            _ =>
+                return Some(Goal::Debug(
+                    "Debugger Commands
   h[elp]                  Print this help documentation.
   c[ontinue]              Continue evaluation.
   s[tep] | into           Step to the next query (will step into rules).
@@ -369,9 +299,7 @@ impl Debugger {
   var [<name> ...]        Print available variables. If one or more arguments
                           are provided, print the value of those variables.
   q[uit]                  Alias for 'continue'."
-                        .to_string(),
-                })
-            }
+                        .to_string()))
         }
         None
     }

@@ -1,5 +1,5 @@
 use crate::counter::Counter;
-use crate::error::{OperationalError, PolarError, PolarResult};
+use crate::error::{OperationalError, PolarResult};
 use crate::events::QueryEvent;
 use crate::terms::Term;
 
@@ -33,10 +33,6 @@ pub trait Runnable {
             msg: "Unexpected debug command".to_string(),
         }
         .into())
-    }
-
-    fn handle_error(&mut self, err: PolarError) -> PolarResult<QueryEvent> {
-        Err(err)
     }
 
     // TODO Alternative?: Goal::Run takes a Runnable constructor function.

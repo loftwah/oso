@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::error::ParameterError;
 use crate::error::{PolarError, PolarResult};
+use super::error;
 
 pub use super::bindings::Bindings;
 use super::counter::Counter;
@@ -43,7 +44,7 @@ pub struct KnowledgeBase {
     /// For symbols returned from gensym.
     gensym_counter: Counter,
     /// For call IDs, instance IDs, symbols, etc.
-    id_counter: Counter,
+    pub id_counter: Counter,
     pub inline_queries: Vec<Term>,
 
     /// Resource block bookkeeping.
@@ -73,10 +74,6 @@ impl KnowledgeBase {
     /// coerced to an IEEE-754 double-float (f64).
     pub fn new_id(&self) -> u64 {
         self.id_counter.next()
-    }
-
-    pub fn id_counter(&self) -> Counter {
-        self.id_counter.clone()
     }
 
     /// Generate a temporary variable prefix from a variable name.

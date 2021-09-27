@@ -34,7 +34,7 @@ pub enum ErrorKind {
     Operational(OperationalError),
     Parameter(ParameterError),
     Validation(ValidationError),
-    Control(ControlError),
+    Control,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -113,14 +113,6 @@ impl PolarError {
     }
 }
 
-impl From<ControlError> for PolarError {
-    fn from(err: ControlError) -> Self {
-        Self {
-            kind: ErrorKind::Control(err),
-            context: None,
-        }
-    }
-}
 impl From<ParseError> for PolarError {
     fn from(err: ParseError) -> Self {
         Self {
@@ -184,7 +176,7 @@ impl fmt::Display for PolarError {
             ErrorKind::Operational(e) => write!(f, "{}", e)?,
             ErrorKind::Parameter(e) => write!(f, "{}", e)?,
             ErrorKind::Validation(e) => write!(f, "{}", e)?,
-            ErrorKind::Control(e) => write!(f, "{:?}", e)?,
+            e => write!(f, "{:?}", e)?,
         }
         if let Some(ref context) = self.context {
             write!(f, "{}", context)?;
@@ -317,7 +309,7 @@ impl fmt::Display for ParseError {
 }
 
 // @TODO: Information about the context of the error.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RuntimeError {
     ArithmeticError {
         msg: String,

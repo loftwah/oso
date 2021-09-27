@@ -119,7 +119,7 @@ where
                 class_tag,
             } => query
                 .question_result(call_id, external_isa_handler(instance, class_tag))
-                .unwrap(),
+                .map(|_|()).unwrap(),
             QueryEvent::ExternalIsSubSpecializer {
                 call_id,
                 instance_id,
@@ -134,16 +134,15 @@ where
                         right_class_tag,
                     ),
                 )
-                .unwrap(),
-            QueryEvent::Debug { ref message } => {
-                query.debug_command(&debug_handler(message)).unwrap();
-            }
+                    .map(|_|()).unwrap(),
+            QueryEvent::Debug(ref message) =>
+                query.debug_command(&debug_handler(message)).map(|_|()).unwrap(),
             QueryEvent::ExternalOp {
                 operator: Operator::Eq,
                 call_id,
                 args,
                 ..
-            } => query.question_result(call_id, args[0] == args[1]).unwrap(),
+            } => query.question_result(call_id, args[0] == args[1]).map(|_|()).unwrap(),
             _ => {}
         }
     }

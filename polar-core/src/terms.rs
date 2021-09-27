@@ -10,7 +10,8 @@ pub use super::numerics::Numeric;
 use super::resource_block::{ACTOR_UNION_NAME, RESOURCE_UNION_NAME};
 use super::sources::SourceInfo;
 use super::visitor::{walk_operation, walk_term, Visitor};
-pub use super::{error, formatting::ToPolarString};
+pub use super::formatting::ToPolarString;
+use super::error::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq, Hash)]
 pub struct Dictionary {
@@ -141,6 +142,35 @@ pub enum Operator {
     Assign,
 }
 
+impl Operator {
+    pub fn cmp(&self, l: &Value, r: &Value) -> PolarResult<bool> {
+        match (l, r) {
+            (Value::String(l), Value::String(r)) =>
+                self.cmp_ord(l, r),
+            (Value::Number(l), Value::Number(r)) =>
+                self.cmp_ord(l, r),
+            _ => Err(RuntimeError::Unsupported {
+                msg: format!("{} {} {}", l.to_polar(), self.to_polar(), r.to_polar()), }
+            .into()),
+
+        }
+    }
+    fn cmp_ord<T: PartialOrd>(&self, l: &T, r: &T) -> PolarResult<bool> {
+        match self {
+            Operator::Lt => Ok(l < r),
+            Operator::Leq => Ok(l <= r),
+            Operator::Gt => Ok(l > r),
+            Operator::Geq => Ok(l >= r),
+            Operator::Eq => Ok(l == r),
+            Operator::Neq => Ok(l != r),
+            _ => {
+                let msg = format!("`{}` is not a comparison operator", self.to_polar());
+                Err(RuntimeError::Unsupported { msg }.into())
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub struct Operation {
     pub operator: Operator,
@@ -170,71 +200,71 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn as_symbol(&self) -> Result<&Symbol, error::RuntimeError> {
+    pub fn as_symbol(&self) -> Result<&Symbol, RuntimeError> {
         match self {
             Value::Variable(name) => Ok(name),
             Value::RestVariable(name) => Ok(name),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected symbol, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_string(&self) -> Result<&str, error::RuntimeError> {
+    pub fn as_string(&self) -> Result<&str, RuntimeError> {
         match self {
             Value::String(string) => Ok(string.as_ref()),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected string, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_expression(&self) -> Result<&Operation, error::RuntimeError> {
+    pub fn as_expression(&self) -> Result<&Operation, RuntimeError> {
         match self {
             Value::Expression(op) => Ok(op),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected expression, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_call(&self) -> Result<&Call, error::RuntimeError> {
+    pub fn as_call(&self) -> Result<&Call, RuntimeError> {
         match self {
             Value::Call(pred) => Ok(pred),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected call, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_pattern(&self) -> Result<&Pattern, error::RuntimeError> {
+    pub fn as_pattern(&self) -> Result<&Pattern, RuntimeError> {
         match self {
             Value::Pattern(p) => Ok(p),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected pattern, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_list(&self) -> Result<&TermList, error::RuntimeError> {
+    pub fn as_list(&self) -> Result<&TermList, RuntimeError> {
         match self {
             Value::List(l) => Ok(l),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected list, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),
         }
     }
 
-    pub fn as_dict(&self) -> Result<&Dictionary, error::RuntimeError> {
+    pub fn as_dict(&self) -> Result<&Dictionary, RuntimeError> {
         match self {
             Value::Dictionary(d) => Ok(d),
-            _ => Err(error::RuntimeError::TypeError {
+            _ => Err(RuntimeError::TypeError {
                 msg: format!("Expected dictionary, got: {}", self.to_polar()),
                 stack_trace: None, // @TODO
             }),

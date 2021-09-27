@@ -5,14 +5,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::bindings::{BindingManager, Bsp, FollowerId, VariableState};
 use crate::counter::Counter;
-use crate::error::{PolarError, PolarResult};
+use crate::error::PolarResult;
 use crate::events::QueryEvent;
 use crate::formatting::ToPolarString;
 use crate::kb::Bindings;
 use crate::partial::simplify_bindings;
 use crate::runnable::Runnable;
 use crate::terms::{Operation, Operator, Term, Value};
-use crate::vm::{Goals, PolarVirtualMachine};
+use crate::vm::{Goal, GoalStack, PolarVirtualMachine};
 
 /// The inverter implements the `not` operation in Polar.
 ///
@@ -48,12 +48,24 @@ static ID: AtomicU64 = AtomicU64::new(0);
 impl Inverter {
     pub fn new(
         vm: &PolarVirtualMachine,
-        goals: Goals,
+        goals: Vec<Goal>,
         add_constraints: Rc<RefCell<Bindings>>,
         bsp: Bsp,
     ) -> Self {
-        let mut vm = vm.clone_with_goals(goals);
-        vm.inverting = true;
+        let vm = PolarVirtualMachine {
+            kb: vm.kb.clone(),
+            tracing: vm.tracing,
+            goals: GoalStack::new_reversed(goals),
+            substitution: {
+                let mut b = BindingManager::default();
+                b.clone_from(&vm.substitution);
+                b
+            },
+            messages: vm.messages.clone(),
+            debugger: vm.debugger.clone(),
+            inverting: true,
+            ..Default::default()
+        };
         Self {
             vm,
             bsp,
@@ -174,8 +186,8 @@ fn filter_inverted_constraints(
         .into_iter()
         .filter(|(k, _)| {
             !(matches!(
-                vm.variable_state_at_point(k, &bsp),
-                VariableState::Unbound | VariableState::Bound(_)
+                vm.substitution.variable_state_at_point(k, &bsp),
+                None | Some(VariableState::Bound(_))
             ))
         })
         .collect::<Bindings>()
@@ -250,9 +262,5 @@ impl Runnable for Inverter {
 
     fn clone_runnable(&self) -> Box<dyn Runnable> {
         Box::new(self.clone())
-    }
-
-    fn handle_error(&mut self, error: PolarError) -> PolarResult<QueryEvent> {
-        self.vm.handle_error(error)
     }
 }

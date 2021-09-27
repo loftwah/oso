@@ -57,12 +57,12 @@ fn warn_str(sym: &Symbol, term: &Term, source: &Option<Source>) -> PolarResult<S
         }
         Ok(msg)
     } else {
-        let perr = error::ParseError::SingletonVariable {
+        let perr = ParseError::SingletonVariable {
             loc: term.offset(),
             name: sym.0.clone(),
         };
-        let err = error::PolarError {
-            kind: error::ErrorKind::Parse(perr),
+        let err = PolarError {
+            kind: ErrorKind::Parse(perr),
             context: None,
         };
 

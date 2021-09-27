@@ -1,5 +1,6 @@
 use super::compile::*;
 use super::data_filtering::{build_filter_plan, FilterPlan, PartialResults, Types};
+use super::error;
 use super::error::PolarResult;
 use super::events::*;
 use super::kb::*;
@@ -12,10 +13,11 @@ use super::terms::*;
 use super::vm::*;
 use super::warnings::{check_ambiguous_precedence, check_singletons};
 
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 pub struct Query {
-    runnable_stack: Vec<(Box<dyn Runnable>, u64)>, // Tuple of Runnable + call_id.
+    runnables: Vec<(Box<dyn Runnable>, u64)>, // Tuple of Runnable + call_id.
     vm: PolarVirtualMachine,
     term: Term,
     done: bool,
@@ -24,7 +26,7 @@ pub struct Query {
 impl Query {
     pub fn new(vm: PolarVirtualMachine, term: Term) -> Self {
         Self {
-            runnable_stack: vec![],
+            runnables: vec![],
             vm,
             term,
             done: false,
@@ -44,29 +46,20 @@ impl Query {
     /// 4. When Runnable B emits a Done event, pop Runnable B off the stack and return its result as
     ///    an answer to Runnable A.
     pub fn next_event(&mut self) -> PolarResult<QueryEvent> {
-        let mut counter = self.vm.id_counter();
-        let qe = match self.top_runnable().run(Some(&mut counter)) {
-            Ok(e) => e,
-            Err(e) => self.top_runnable().handle_error(e)?,
-        };
-        self.recv_event(qe)
-    }
-
-    fn recv_event(&mut self, qe: QueryEvent) -> PolarResult<QueryEvent> {
+        let mut ct = self.vm.kb.read().unwrap().id_counter.clone();
+        let qe = self.top_runnable().run(Some(&mut ct))?;
         match qe {
             QueryEvent::None => self.next_event(),
-            QueryEvent::Run { runnable, call_id } => {
-                self.push_runnable(runnable, call_id);
-                self.next_event()
-            }
+            QueryEvent::Run { runnable, call_id } =>
+                self.push_runnable(runnable, call_id).next_event(),
             QueryEvent::Done { result } => {
-                if let Some((_, result_call_id)) = self.pop_runnable() {
+                if let Some((_, result_call_id)) = self.runnables.pop() {
                     self.top_runnable()
                         .external_question_result(result_call_id, result)?;
                     self.next_event()
                 } else {
                     // VM is done.
-                    assert!(self.runnable_stack.is_empty());
+                    assert!(self.runnables.is_empty());
                     Ok(QueryEvent::Done { result })
                 }
             }
@@ -75,36 +68,27 @@ impl Query {
     }
 
     fn top_runnable(&mut self) -> &mut (dyn Runnable) {
-        self.runnable_stack
+        self.runnables
             .last_mut()
             .map(|b| b.0.as_mut())
             .unwrap_or(&mut self.vm)
     }
 
-    fn push_runnable(&mut self, runnable: Box<dyn Runnable>, call_id: u64) {
-        self.runnable_stack.push((runnable, call_id));
+    fn push_runnable(&mut self, runnable: Box<dyn Runnable>, call_id: u64) -> &mut Self {
+        self.runnables.push((runnable, call_id)); self }
+
+    pub fn call_result(&mut self, call_id: u64, value: Option<Term>) -> PolarResult<&mut Self> {
+        self.top_runnable().external_call_result(call_id, value)?; Ok(self) }
+
+    pub fn question_result(&mut self, call_id: u64, result: bool) -> PolarResult<&mut Self> {
+        self.top_runnable() .external_question_result(call_id, result)?; Ok(self)
     }
 
-    fn pop_runnable(&mut self) -> Option<(Box<dyn Runnable>, u64)> {
-        self.runnable_stack.pop()
-    }
+    pub fn application_error(&mut self, message: String) -> PolarResult<&mut Self> {
+        self.vm.set_external_error(message); Ok(self) }
 
-    pub fn call_result(&mut self, call_id: u64, value: Option<Term>) -> PolarResult<()> {
-        self.top_runnable().external_call_result(call_id, value)
-    }
-
-    pub fn question_result(&mut self, call_id: u64, result: bool) -> PolarResult<()> {
-        self.top_runnable()
-            .external_question_result(call_id, result)
-    }
-
-    pub fn application_error(&mut self, message: String) -> PolarResult<()> {
-        self.vm.external_error(message)
-    }
-
-    pub fn debug_command(&mut self, command: &str) -> PolarResult<()> {
-        self.top_runnable().debug_command(command)
-    }
+    pub fn debug_command(&mut self, command: &str) -> PolarResult<&mut Self> {
+        self.top_runnable().debug_command(command)?; Ok(self) }
 
     pub fn next_message(&self) -> Option<Message> {
         self.vm.messages.next()
@@ -115,7 +99,7 @@ impl Query {
     }
 
     pub fn bind(&mut self, name: Symbol, value: Term) -> PolarResult<()> {
-        self.vm.bind(&name, value)
+        self.vm.bind(&Term::from(name), value).map(|_|())
     }
 }
 
@@ -299,9 +283,13 @@ impl Polar {
             let mut kb = self.kb.write().unwrap();
             term = rewrite_term(term, &mut kb);
         }
-        let query = Goal::Query { term: term.clone() };
-        let vm =
-            PolarVirtualMachine::new(self.kb.clone(), trace, vec![query], self.messages.clone());
+        let query = Goal::Query(term.clone());
+        let vm = PolarVirtualMachine {
+            kb: self.kb.clone(),
+            tracing: trace,
+            goals: GoalStack(vec![Rc::new(query)]),
+            ..Default::default()
+        };
         Query::new(vm, term)
     }
 
