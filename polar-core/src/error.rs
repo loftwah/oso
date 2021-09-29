@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-
 use std::{fmt, ops};
 
 use crate::sources::*;
@@ -111,6 +110,11 @@ impl PolarError {
     pub fn unimplemented(msg: String) -> Self {
         OperationalError::Unimplemented { msg }.into()
     }
+
+    pub fn invalid(msg: String) -> Self {
+        OperationalError::InvalidState { msg }.into()
+    }
+        
 }
 
 impl From<ParseError> for PolarError {

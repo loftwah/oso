@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use serde::{Deserialize, Serialize};
 
@@ -143,6 +144,29 @@ pub enum Operator {
 }
 
 impl Operator {
+    pub fn is_math(&self) -> bool {
+        match self {
+            Self::Add | Self::Sub |
+            Self::Mul | Self::Div |
+            Self::Rem => true,
+            _ => false,
+        }
+    }
+
+    pub fn is_cmp(&self) -> bool {
+        match self {
+            Self::Eq | Self::Neq => true,
+            _ => self.is_ord(),
+        }
+    }
+
+    pub fn is_ord(&self) -> bool {
+        match self {
+            Self::Gt | Self::Geq | Self::Lt | Self::Leq => true,
+            _ => false,
+        }
+    }
+
     pub fn cmp(&self, l: &Value, r: &Value) -> PolarResult<bool> {
         match (l, r) {
             (Value::String(l), Value::String(r)) =>
@@ -200,6 +224,13 @@ pub enum Value {
 }
 
 impl Value {
+    pub fn modulo(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Self::Number(a), Self::Number(b)) => a.modulo(b).map(Self::Number),
+            _ => None,
+        }
+    }
+
     pub fn as_symbol(&self) -> Result<&Symbol, RuntimeError> {
         match self {
             Value::Variable(name) => Ok(name),
@@ -294,6 +325,41 @@ impl fmt::Display for Value {
     }
 }
 
+impl Add for Value {
+    type Output = Option<Self>;
+    fn add(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l.add(r).map(Value::Number),
+            _ => None } } }
+
+impl Sub for Value {
+    type Output = Option<Self>;
+    fn sub(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l.sub(r).map(Value::Number),
+            _ => None } } }
+
+impl Mul for Value {
+    type Output = Option<Self>;
+    fn mul(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l.mul(r).map(Value::Number),
+            _ => None } } }
+
+impl Div for Value {
+    type Output = Option<Self>;
+    fn div(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l.div(r).map(Value::Number),
+            _ => None } } }
+
+impl Rem for Value {
+    type Output = Option<Self>;
+    fn rem(self, other: Self) -> Option<Self> {
+        match (self, other) {
+            (Value::Number(l), Value::Number(r)) => l.rem(r).map(Value::Number),
+            _ => None } } }
+
 /// Represents a concrete instance of a Polar value
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Term {
@@ -302,7 +368,7 @@ pub struct Term {
     source_info: SourceInfo,
 
     /// The actual underlying value
-    value: Arc<Value>,
+    pub value: Arc<Value>,
 }
 
 impl PartialEq for Term {
