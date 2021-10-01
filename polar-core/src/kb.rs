@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use super::error;
 use crate::error::ParameterError;
 use crate::error::{PolarError, PolarResult};
-use super::error;
 
 pub use super::bindings::Bindings;
 use super::counter::Counter;

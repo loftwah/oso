@@ -179,7 +179,7 @@ impl Runnable for IsaConstraintCheck {
             } else if self.alternative_check.is_none() {
                 // If both checks fail, we fail.
                 //
-                return Ok(QueryEvent::Done { result: false });
+                return Ok(QueryEvent::Done(false));
             }
         }
 
@@ -191,7 +191,7 @@ impl Runnable for IsaConstraintCheck {
         let counter = counter.expect("IsaConstraintCheck requires a Counter");
         loop {
             match self.existing.pop() {
-                None => return Ok(QueryEvent::Done { result: true }),
+                None => return Ok(QueryEvent::Done(true)),
                 Some(constraint) => match self.check_constraint(constraint, counter) {
                     Check::None => (),
                     Check::One(a) => return Ok(a),

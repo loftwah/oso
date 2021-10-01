@@ -1,7 +1,7 @@
 use std::fmt::Write;
 use std::rc::Rc;
 
-use super::error::{PolarError};
+use super::error::PolarError;
 use super::formatting::{source_lines, ToPolarString};
 use super::partial::simplify_bindings;
 use super::sources::*;
@@ -13,6 +13,48 @@ use super::kb::KnowledgeBase;
 use super::vm::*;
 
 impl PolarVirtualMachine {
+
+    /// this API doc is for the old version `Debug::maybe_break`
+    /// in which `dbg` was `self` and `self` was `vm`
+    ///
+    /// When the [`VM`](../vm/struct.PolarVirtualMachine.html) hits a breakpoint, check if
+    /// evaluation should pause.
+    ///
+    /// The check is a comparison of the [`Debugger`](struct.Debugger.html)'s
+    /// [`step`](struct.Debugger.html#structfield.step) field with the passed-in
+    /// [`DebugEvent`](enum.DebugEvent.html). If [`step`](struct.Debugger.html#structfield.step) is
+    /// set to `None`, evaluation continues. For details about how the `Some()` values of
+    /// [`step`](struct.Debugger.html#structfield.step) are handled, see the explanations in the
+    /// [`Step`](enum.Step.html) documentation.
+    ///
+    /// ## Returns
+    ///
+    /// - `Some(Goal::Debug { message })` -> Pause evaluation.
+    /// - `None` -> Continue evaluation.
+    pub fn break_maybe(&self, event: DebugEvent) -> Option<Goal> {
+        self.debugger
+            .step
+            .as_ref()
+            .and_then(|step| match (step, event) {
+                (Step::Goal, DebugEvent::Goal(goal)) => Some(Goal::Debug(goal.to_string())),
+                (Step::Into, DebugEvent::Query) => self.debugger.break_msg(self).map(Goal::Debug),
+                (Step::Out(level), DebugEvent::Query)
+                    if self.trace_stack.is_empty() || self.trace_stack.len() < *level =>
+                {
+                    self.debugger.break_msg(self).map(Goal::Debug)
+                }
+                (Step::Over(level), DebugEvent::Query) if self.trace_stack.len() == *level => {
+                    self.debugger.break_msg(self).map(Goal::Debug)
+                }
+                (Step::Error, DebugEvent::Error(error)) => {
+                    self.debugger.break_msg(self).map(|message| {
+                        Goal::Debug(format!("{}\nERROR: {}\n", message, error.to_string()))
+                    })
+                }
+                (Step::Rule, DebugEvent::Rule) => self.debugger.break_msg(self).map(Goal::Debug),
+                _ => None,
+            })
+    }
     pub fn query_summary(&self, query: &Term) -> String {
         let relevant_bindings = self.relevant_bindings(&[query]);
         let bindings_str = relevant_bindings
@@ -27,7 +69,7 @@ impl PolarVirtualMachine {
 
 /// [`Debugger`](struct.Debugger.html) step granularity.
 #[derive(Clone, Debug)]
-pub enum Step {
+enum Step {
     /// Pause after evaluating the next [`Goal`](../vm/enum.Goal.html).
     Goal,
     /// Step **over** the current query. Will break on the next query where the trace stack is at the same
@@ -66,7 +108,7 @@ pub struct Debugger {
     /// - `None`: Don't stop.
     /// - `Some(step)`: View the stopping logic in
     ///   [`maybe_break`](struct.Debugger.html#method.maybe_break).
-    pub step: Option<Step>,
+    step: Option<Step>,
     last: Option<String>,
 }
 

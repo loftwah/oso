@@ -14,9 +14,7 @@ pub enum QueryEvent {
     None,
 
     /// This runnable is complete with `result`.
-    Done {
-        result: bool,
-    },
+    Done(bool),
 
     /// Run `runnable`, and report the result to its parent using `call_id`
     /// when it completes.

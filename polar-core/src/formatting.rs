@@ -233,7 +233,7 @@ pub mod display {
             }
 
             match self {
-                Goal::Isa( left, right ) => {
+                Goal::Isa(left, right) => {
                     write!(fmt, "Isa({}, {})", left.to_polar(), right.to_polar())
                 }
                 Goal::IsMoreSpecific { left, right, args } => write!(
@@ -273,14 +273,14 @@ pub mod display {
                 Goal::PopQuery(term) => write!(fmt, "PopQuery({})", term.to_polar()),
                 Goal::Query(term) => write!(fmt, "Query({})", term.to_polar()),
                 Goal::Run(_) => write!(fmt, "Run(...)"),
-                Goal::CallRules {
-                    rules,
-                    args,
-                } => write!(
+                Goal::CallRules(rules, args) => write!(
                     fmt,
                     "CallRules([{}], [{}])",
                     fmt_rules(rules),
-                    args.iter().map(|a|a.to_polar()).collect::<Vec<_>>().join(", ")
+                    args.iter()
+                        .map(|a| a.to_polar())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 ),
                 Goal::TraceRule(_) => write!(
                     fmt,

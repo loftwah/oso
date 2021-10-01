@@ -211,7 +211,7 @@ impl Runnable for Inverter {
         loop {
             // Pass most events through, but collect results and invert them.
             match self.vm.run(None)? {
-                QueryEvent::Done { .. } => {
+                QueryEvent::Done(_) => {
                     let result = self.results.is_empty();
                     if !result {
                         // If there are results, the inversion should usually fail. However,
@@ -229,10 +229,10 @@ impl Runnable for Inverter {
                             // TODO (dhatch): Would be nice to come up with a better way of doing this.
                             self.add_constraints.borrow_mut().extend(constraints);
 
-                            return Ok(QueryEvent::Done { result: true });
+                            return Ok(QueryEvent::Done(true));
                         }
                     }
-                    return Ok(QueryEvent::Done { result });
+                    return Ok(QueryEvent::Done(result));
                 }
                 QueryEvent::Result { .. } => {
                     // Retrieve new bindings made when running inverted query.

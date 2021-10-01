@@ -3,12 +3,12 @@ use std::ops::Range;
 
 use lalrpop_util::ParseError as LalrpopError;
 
+use super::error;
 use super::error::{ParseError, PolarError, PolarResult, RuntimeError};
 use super::kb::KnowledgeBase;
 use super::lexer::Token;
 use super::rules::*;
 use super::terms::*;
-use super::error;
 
 pub const ACTOR_UNION_NAME: &str = "Actor";
 pub const RESOURCE_UNION_NAME: &str = "Resource";

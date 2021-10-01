@@ -93,7 +93,11 @@ impl<'a> Folder for Derefer<'a> {
 fn cycle_constraints(cycle: Vec<Symbol>) -> Operation {
     let mut constraints = op!(And);
     for (x, y) in cycle.iter().zip(cycle.iter().skip(1)) {
-        constraints.add_constraint(op!(Unify, Term::from(Value::Variable(x.clone())), term!(y.clone())));
+        constraints.add_constraint(op!(
+            Unify,
+            Term::from(Value::Variable(x.clone())),
+            term!(y.clone())
+        ));
     }
     constraints
 }
@@ -114,7 +118,8 @@ impl From<Lookup<'_>> for VariableState {
 pub enum Lookup<'a> {
     Bound(&'a Term),
     Partial(&'a Operation),
-    Cycle(Vec<Symbol>), }
+    Cycle(Vec<Symbol>),
+}
 
 /// The `BindingManager` maintains associations between variables and values,
 /// and constraints.
@@ -134,17 +139,21 @@ pub enum Lookup<'a> {
 pub struct BindingManager {
     bindings: BindingStack,
     followers: HashMap<FollowerId, BindingManager>,
-    next_follower_id: FollowerId, }
+    next_follower_id: FollowerId,
+}
 
 // Public interface.
 impl BindingManager {
     pub fn ground<'a>(&'a self, v: &'a Term) -> Option<&'a Term> {
         match self.get(v) {
             Some(Lookup::Bound(t)) => Some(t),
-            _ => None } }
+            _ => None,
+        }
+    }
 
     pub fn is_ground(&self, v: &Term) -> bool {
-        self.ground(v).is_some() }
+        self.ground(v).is_some()
+    }
 
     /// Bind `var` to `val` in the expression `partial`.
     ///
@@ -156,12 +165,13 @@ impl BindingManager {
     }
 
     fn coconstrain(&mut self, a: &Term, b: &Term) -> PolarResult<()> {
-        self.add_constraint(&Term::from(op!(Unify, a.clone(), b.clone()))) }
-
+        self.add_constraint(&Term::from(op!(Unify, a.clone(), b.clone())))
+    }
 
     pub fn bind(&mut self, lhs: &Term, val: Term) -> PolarResult<Option<Goal>> {
-        fn as_sym<'a>(t: &'a Term) -> &'a Symbol {
-            t.value().as_symbol().unwrap() }
+        fn as_sym(t: &Term) -> &Symbol {
+            t.value().as_symbol().unwrap()
+        }
         let mut goals: Vec<Goal> = vec![];
         let rhs = self.get(&val);
 
@@ -169,44 +179,57 @@ impl BindingManager {
             // left free, right free
             (None, None) => {
                 let (lhs, rhs) = (as_sym(lhs), val.clone());
-                self.add_binding(lhs, rhs) }
+                self.add_binding(lhs, rhs)
+            }
 
             // left bound, right bound
-            (Some(Lookup::Bound(a)), Some(Lookup::Bound(b))) =>
-                if a == b { }
-                else { return Err(PolarError{ kind: ErrorKind::Control, context: None }) },
+            (Some(Lookup::Bound(a)), Some(Lookup::Bound(b))) => {
+                if a == b {
+                } else {
+                    return Err(PolarError {
+                        kind: ErrorKind::Control,
+                        context: None,
+                    });
+                }
+            }
 
             // left free, right bound
-            (None, Some(Lookup::Bound(val))) => { // one side bound, other side free
+            (None, Some(Lookup::Bound(val))) => {
+                // one side bound, other side free
                 let (lhs, rhs) = (as_sym(lhs), val.clone());
-                self.add_binding(lhs, rhs) }
+                self.add_binding(lhs, rhs)
+            }
             // right free, left bound
             (Some(Lookup::Bound(to)), None) => {
                 let (lhs, rhs) = (as_sym(&val), to.clone());
-                self.add_binding(lhs, rhs) }
+                self.add_binding(lhs, rhs)
+            }
 
             // left constrained, right bound
             (Some(Lookup::Partial(p)), Some(Lookup::Bound(b))) => {
                 let (p, b) = (p.clone(), b.clone());
-                goals.push(self.addl_binding(p, as_sym(lhs), b)?) }
+                goals.push(self.addl_binding(p, as_sym(lhs), b)?)
+            }
             (Some(Lookup::Cycle(p)), Some(Lookup::Bound(b))) => {
                 let (p, b) = (cycle_constraints(p), b.clone());
-                goals.push(self.addl_binding(p, as_sym(lhs), b)?) }
+                goals.push(self.addl_binding(p, as_sym(lhs), b)?)
+            }
 
             // right constrained, left bound
             (Some(Lookup::Bound(b)), Some(Lookup::Partial(p))) => {
                 let (p, rhs, b) = (p.clone(), as_sym(&val), b.clone());
-                goals.push(self.addl_binding(p, rhs, b)?) }
+                goals.push(self.addl_binding(p, rhs, b)?)
+            }
             (Some(Lookup::Bound(b)), Some(Lookup::Cycle(p))) => {
                 let (p, rhs, b) = (cycle_constraints(p), as_sym(&val), b.clone());
-                goals.push(self.addl_binding(p, rhs, b)?) }
+                goals.push(self.addl_binding(p, rhs, b)?)
+            }
 
             // at least one side is constrained, and RHS is definitely a symbol
             _ => self.coconstrain(lhs, &val).map(|_| ())?,
         };
 
-        self.do_followers(|_, follower| {
-            follower.bind(lhs, val.clone()).map(|_| ()) })?;
+        self.do_followers(|_, follower| follower.bind(lhs, val.clone()).map(|_| ()))?;
 
         Ok(goals.pop())
     }
@@ -225,9 +248,7 @@ impl BindingManager {
         // include all constraints applying to any of its variables.
         for var in op.variables().iter().rev() {
             match self.get(&Term::from(var.clone())) {
-                Some(Lookup::Cycle(c)) => {
-                    op = cycle_constraints(c).merge_constraints(op)
-                }
+                Some(Lookup::Cycle(c)) => op = cycle_constraints(c).merge_constraints(op),
                 Some(Lookup::Partial(e)) => op = e.clone().merge_constraints(op),
                 _ => {}
             }
@@ -271,13 +292,15 @@ impl BindingManager {
         })
         .unwrap();
 
-        self.bindings.truncate(to.bindings_index) }
+        self.bindings.truncate(to.bindings_index)
+    }
 
     // *** Binding Inspection ***
     /// Dereference all variables in term, including within nested structures like
     /// lists and dictionaries.
     pub fn deref(&self, term: &Term) -> Term {
-        Derefer::new(self).fold_term(term.clone()) }
+        Derefer::new(self).fold_term(term.clone())
+    }
 
     /// Get constraints on variable `variable`. If the variable is in a cycle,
     /// the cycle is expressed as a partial.
@@ -288,18 +311,20 @@ impl BindingManager {
                 op!(And, term!(op!(Unify, term!(variable.clone()), val.clone())))
             }
             Some(Lookup::Partial(expr)) => expr.clone(),
-            Some(Lookup::Cycle(c)) => cycle_constraints(c), } }
+            Some(Lookup::Cycle(c)) => cycle_constraints(c),
+        }
+    }
 
     pub fn variable_state(&self, variable: &Symbol) -> Option<VariableState> {
-        self.variable_state_at_point(variable, &self.bsp()) }
+        self.variable_state_at_point(variable, &self.bsp())
+    }
 
     pub fn variable_state_at_point(&self, variable: &Symbol, bsp: &Bsp) -> Option<VariableState> {
         let index = bsp.bindings_index;
         let mut next = variable;
         while let Some(value) = self.value(next, index) {
             match value.value() {
-                Value::Expression(_) =>
-                    return Some(VariableState::Partial),
+                Value::Expression(_) => return Some(VariableState::Partial),
                 Value::Variable(v) | Value::RestVariable(v) => {
                     if v == variable {
                         return Some(VariableState::Partial);
@@ -310,7 +335,8 @@ impl BindingManager {
                 _ => return Some(VariableState::Bound(value.clone())),
             }
         }
-        None }
+        None
+    }
 
     /// Return all variables used in this binding manager.
     pub fn variables(&self) -> HashSet<Symbol> {
@@ -388,7 +414,6 @@ impl BindingManager {
         self.bindings.push(Binding(var.clone(), val));
     }
 
-
     fn lookup(&self, var: &Symbol) -> Option<Term> {
         match self.variable_state(var) {
             Some(VariableState::Bound(val)) => Some(val),
@@ -407,32 +432,31 @@ impl BindingManager {
 
     pub fn get<'a>(&'a self, t: &'a Term) -> Option<Lookup<'a>> {
         match t.value() {
-            Value::Variable(y) | Value::RestVariable(y) =>
-                self.value(y, self.bsp().bindings_index)
-                    .and_then(|t| self.get(t)),
-            _ => Some(Lookup::Bound(t)), } }
+            Value::Variable(y) | Value::RestVariable(y) => self
+                .value(y, self.bsp().bindings_index)
+                .and_then(|t| self.get(t)),
+            _ => Some(Lookup::Bound(t)),
+        }
+    }
 
     fn _variable_state<'a>(&'a self, y: &Symbol) -> Option<Lookup<'a>> {
         self._variable_state_at_point(y, &self.bsp())
     }
 
     /// Check the state of `variable` at `bsp`.
-    fn _variable_state_at_point<'a>(
-        &'a self,
-        variable: &Symbol,
-        bsp: &Bsp,
-    ) -> Option<Lookup<'a>> {
+    fn _variable_state_at_point<'a>(&'a self, variable: &Symbol, bsp: &Bsp) -> Option<Lookup<'a>> {
         let index = bsp.bindings_index;
         let mut path = vec![variable];
         while let Some(value) = self.value(path.last().unwrap(), index) {
             match value.value() {
                 Value::Expression(e) => return Some(Lookup::Partial(e)),
-                Value::Variable(v) | Value::RestVariable(v) =>
+                Value::Variable(v) | Value::RestVariable(v) => {
                     if v == variable {
-                        return Some(Lookup::Cycle( path.into_iter().cloned().collect(),));
+                        return Some(Lookup::Cycle(path.into_iter().cloned().collect()));
                     } else {
-                        path.push(&v);
+                        path.push(v);
                     }
+                }
                 _ => return Some(Lookup::Bound(value)),
             }
         }
@@ -466,32 +490,53 @@ mod test {
         let z = sym!("z");
 
         // Unbound.
-        assert_eq!( bindings._variable_state(&x), None,);
+        assert_eq!(bindings._variable_state(&x), None,);
 
         // Bound.
         bindings.add_binding(&x, term!(1));
-        assert_eq!( bindings._variable_state(&x), Some(Lookup::Bound(&term!(1))));
+        assert_eq!(bindings._variable_state(&x), Some(Lookup::Bound(&term!(1))));
 
         bindings.add_binding(&x, term!(x.clone()));
-        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone()])));
+        assert_eq!(
+            bindings._variable_state(&x),
+            Some(Lookup::Cycle(vec![x.clone()]))
+        );
 
         // 2-cycle.
         bindings.add_binding(&x, term!(y.clone()));
         bindings.add_binding(&y, term!(x.clone()));
-        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone(), y.clone()])));
-        assert_eq!( bindings._variable_state(&y), Some(Lookup::Cycle(vec![y.clone(), x.clone()])));
+        assert_eq!(
+            bindings._variable_state(&x),
+            Some(Lookup::Cycle(vec![x.clone(), y.clone()]))
+        );
+        assert_eq!(
+            bindings._variable_state(&y),
+            Some(Lookup::Cycle(vec![y.clone(), x.clone()]))
+        );
 
         // 3-cycle.
         bindings.add_binding(&x, term!(y.clone()));
         bindings.add_binding(&y, term!(z.clone()));
         bindings.add_binding(&z, term!(x.clone()));
-        assert_eq!( bindings._variable_state(&x), Some(Lookup::Cycle(vec![x.clone(), y.clone(), z.clone()])));
-        assert_eq!( bindings._variable_state(&y), Some(Lookup::Cycle(vec![y.clone(), z.clone(), x.clone()])));
-        assert_eq!( bindings._variable_state(&z), Some(Lookup::Cycle(vec![z.clone(), x.clone(), y])));
+        assert_eq!(
+            bindings._variable_state(&x),
+            Some(Lookup::Cycle(vec![x.clone(), y.clone(), z.clone()]))
+        );
+        assert_eq!(
+            bindings._variable_state(&y),
+            Some(Lookup::Cycle(vec![y.clone(), z.clone(), x.clone()]))
+        );
+        assert_eq!(
+            bindings._variable_state(&z),
+            Some(Lookup::Cycle(vec![z.clone(), x.clone(), y]))
+        );
 
         // Expression.
         bindings.add_binding(&x, term!(op!(And)));
-        assert_eq!( bindings._variable_state(&x), Some(Lookup::Partial(&op!(And))));
+        assert_eq!(
+            bindings._variable_state(&x),
+            Some(Lookup::Partial(&op!(And)))
+        );
     }
 
     #[test]
@@ -529,15 +574,12 @@ mod test {
         );
 
         let b2 = b1.remove_follower(&b2_id).unwrap();
+        assert_eq!(b2._variable_state(&sym!("x")), None);
+        assert_eq!(b2._variable_state(&sym!("y")), None);
         assert_eq!(
-            b2._variable_state(&sym!("x")),
-            None
+            b2._variable_state(&sym!("z")),
+            Some(Lookup::Bound(&term!(3)))
         );
-        assert_eq!(
-            b2._variable_state(&sym!("y")),
-            None
-        );
-        assert_eq!( b2._variable_state(&sym!("z")), Some(Lookup::Bound(&term!(3))));
 
         // Extending cycle.
         let mut b1 = BindingManager::default();
@@ -657,8 +699,8 @@ mod test {
         bm.bind(&one_var, one.clone()).unwrap();
         bm.bind(&two_var, two.clone()).unwrap();
         let dict = btreemap! {
-            sym!("x") => one_var.clone(),
-            sym!("y") => two_var.clone(),
+            sym!("x") => one_var,
+            sym!("y") => two_var,
         };
         let list = term!([dict]);
         assert_eq!(
@@ -677,7 +719,10 @@ mod test {
         let zero = term!(0);
         let mut bm = BindingManager::default();
         bm.bind(&x, zero.clone()).unwrap();
-        assert_eq!(bm.variable_state(x.value().as_symbol().unwrap()), Some(VariableState::Bound(zero)));
+        assert_eq!(
+            bm.variable_state(x.value().as_symbol().unwrap()),
+            Some(VariableState::Bound(zero))
+        );
         assert_eq!(bm.variable_state(y.value().as_symbol().unwrap()), None);
     }
 
@@ -704,9 +749,6 @@ mod test {
 
         b1.backtrack(&bsp);
         let b2 = b1.remove_follower(&b2_id).unwrap();
-        assert!(matches!(
-            b2.variable_state(&sym!("a")),
-            None,
-        ));
+        assert!(matches!(b2.variable_state(&sym!("a")), None,));
     }
 }

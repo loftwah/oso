@@ -114,7 +114,6 @@ impl PolarError {
     pub fn invalid(msg: String) -> Self {
         OperationalError::InvalidState { msg }.into()
     }
-        
 }
 
 impl From<ParseError> for PolarError {

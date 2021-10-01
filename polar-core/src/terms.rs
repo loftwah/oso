@@ -2,17 +2,17 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::ops::{Add, Div, Mul, Rem, Sub};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use super::error::*;
+pub use super::formatting::ToPolarString;
 pub use super::numerics::Numeric;
 use super::resource_block::{ACTOR_UNION_NAME, RESOURCE_UNION_NAME};
 use super::sources::SourceInfo;
 use super::visitor::{walk_operation, walk_term, Visitor};
-pub use super::formatting::ToPolarString;
-use super::error::*;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq, Hash)]
 pub struct Dictionary {
@@ -112,7 +112,8 @@ pub enum Op {
     Lt(TermList),
     Or(TermList),
     And(TermList),
-    ForAll(TermList) }
+    ForAll(TermList),
+}
 
 #[derive(Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum Operator {
@@ -145,12 +146,7 @@ pub enum Operator {
 
 impl Operator {
     pub fn is_math(&self) -> bool {
-        match self {
-            Self::Add | Self::Sub |
-            Self::Mul | Self::Div |
-            Self::Rem => true,
-            _ => false,
-        }
+        matches!(self, Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem)
     }
 
     pub fn is_cmp(&self) -> bool {
@@ -161,22 +157,17 @@ impl Operator {
     }
 
     pub fn is_ord(&self) -> bool {
-        match self {
-            Self::Gt | Self::Geq | Self::Lt | Self::Leq => true,
-            _ => false,
-        }
+        matches!(self, Self::Gt | Self::Geq | Self::Lt | Self::Leq)
     }
 
     pub fn cmp(&self, l: &Value, r: &Value) -> PolarResult<bool> {
         match (l, r) {
-            (Value::String(l), Value::String(r)) =>
-                self.cmp_ord(l, r),
-            (Value::Number(l), Value::Number(r)) =>
-                self.cmp_ord(l, r),
+            (Value::String(l), Value::String(r)) => self.cmp_ord(l, r),
+            (Value::Number(l), Value::Number(r)) => self.cmp_ord(l, r),
             _ => Err(RuntimeError::Unsupported {
-                msg: format!("{} {} {}", l.to_polar(), self.to_polar(), r.to_polar()), }
+                msg: format!("{} {} {}", l.to_polar(), self.to_polar(), r.to_polar()),
+            }
             .into()),
-
         }
     }
     fn cmp_ord<T: PartialOrd>(&self, l: &T, r: &T) -> PolarResult<bool> {
@@ -330,35 +321,50 @@ impl Add for Value {
     fn add(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l.add(r).map(Value::Number),
-            _ => None } } }
+            _ => None,
+        }
+    }
+}
 
 impl Sub for Value {
     type Output = Option<Self>;
     fn sub(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l.sub(r).map(Value::Number),
-            _ => None } } }
+            _ => None,
+        }
+    }
+}
 
 impl Mul for Value {
     type Output = Option<Self>;
     fn mul(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l.mul(r).map(Value::Number),
-            _ => None } } }
+            _ => None,
+        }
+    }
+}
 
 impl Div for Value {
     type Output = Option<Self>;
     fn div(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l.div(r).map(Value::Number),
-            _ => None } } }
+            _ => None,
+        }
+    }
+}
 
 impl Rem for Value {
     type Output = Option<Self>;
     fn rem(self, other: Self) -> Option<Self> {
         match (self, other) {
             (Value::Number(l), Value::Number(r)) => l.rem(r).map(Value::Number),
-            _ => None } } }
+            _ => None,
+        }
+    }
+}
 
 /// Represents a concrete instance of a Polar value
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -550,7 +556,6 @@ impl Term {
     pub fn is_ground(&self) -> bool {
         self.value().is_ground()
     }
-
 
     /// Get a set of all the variables used within a term.
     pub fn variables(&self, vars: &mut HashSet<Symbol>) {
