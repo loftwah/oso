@@ -88,16 +88,9 @@ pub enum Goal {
     Noop,
     Query(Term),
     PopQuery(Term),
-    FilterRules {
-        args: TermList,
-        applicable_rules: Rules,
-        unfiltered_rules: Rules,
-    },
-    SortRules {
+    CallRules {
         args: TermList,
         rules: Rules,
-        outer: usize,
-        inner: usize,
     },
     TraceRule(Rc<Trace>),
     TraceStackPush,
@@ -423,12 +416,8 @@ impl PolarVirtualMachine {
             Goal::PopQuery(_) => {
                 self.queries.pop();
                 self.done_with(goal) }
-            Goal::FilterRules { applicable_rules, unfiltered_rules, args, } =>
-                self.filter_rules(applicable_rules, unfiltered_rules, args)?
-                    .done_with(goal),
-            Goal::SortRules { rules, outer, inner, args, } =>
-                self.sort_rules(rules, args, *outer, *inner)?
-                    .done_with(goal),
+            Goal::CallRules { args, rules } =>
+                self.call_rules(rules, args)?.done(),
             Goal::TraceStackPush => {
                 self.trace_stack.push(self.trace.clone());
                 self.trace = vec![];
@@ -1199,8 +1188,6 @@ impl PolarVirtualMachine {
                         term.value().to_polar()
                     )), } }
 
-    /// Select applicable rules for predicate.
-    /// Sort applicable rules by specificity.
     /// Create a choice over the applicable rules.
     fn query_for_predicate(&mut self, predicate: Call) -> PolarResult<QueryEvent> {
         assert!(predicate.kwargs.is_none());
@@ -1209,20 +1196,12 @@ impl PolarVirtualMachine {
             Some(generic_rule) => {
                 assert_eq!(generic_rule.name, predicate.name);
 
-                // Pre-filter rules.
                 let args = predicate.args.iter().map(|t| self.deref(t)).collect();
-                let pre_filter = generic_rule.get_applicable_rules(&args);
+                let rules = generic_rule.get_applicable_rules(&args);
 
-                self.polar_log_mute = true;
-
-                // Filter rules by applicability.
                 vec![
                     Goal::TraceStackPush,
-                    Goal::FilterRules {
-                        applicable_rules: vec![],
-                        unfiltered_rules: pre_filter,
-                        args: predicate.args,
-                    },
+                    Goal::CallRules { rules, args },
                     Goal::TraceStackPop,
                 ]
             }
@@ -1409,8 +1388,8 @@ impl PolarVirtualMachine {
         &mut self,
         expn: &Operation,
         eval: F,
-        handle_unbound_left_var: bool,
-        handle_unbound_right_var: bool,
+        leftp: bool,
+        rightp: bool,
     ) -> PolarResult<QueryEvent>
     where
         F: Fn(&mut Self, Term) -> PolarResult<QueryEvent>,
@@ -1418,7 +1397,7 @@ impl PolarVirtualMachine {
         let operator = expn.operator;
         let args = expn.args.clone();
         let term = Term::from(Operation { operator, args });
-        self.query_op_helper(term, eval, handle_unbound_left_var, handle_unbound_right_var)
+        self.query_op_helper(term, eval, leftp, rightp)
     }
 
     /// Handle variables & constraints as arguments to various operations.
@@ -1871,165 +1850,39 @@ impl PolarVirtualMachine {
         )
     }
 
-    /// Filter rules to just those applicable to a list of arguments,
-    /// then sort them by specificity.
-    #[allow(clippy::ptr_arg)]
-    fn filter_rules(
-        &mut self,
-        applicable_rules: &Rules,
-        unfiltered_rules: &Rules,
-        args: &TermList,
-    ) -> PolarResult<&mut Self> {
-        if unfiltered_rules.is_empty() {
-            return self.goal(Goal::SortRules {
-                rules: applicable_rules.iter().rev().cloned().collect(),
-                args: args.clone(),
-                outer: 1,
-                inner: 1,
-            })
-        }
-        // Check one rule for applicability.
-        let mut unfiltered_rules = unfiltered_rules.clone();
-        let rule = unfiltered_rules.pop().unwrap();
-
-        let inapplicable = Goal::FilterRules {
-            args: args.clone(),
-            applicable_rules: applicable_rules.clone(),
-            unfiltered_rules: unfiltered_rules.clone(),
-        };
-
-        if rule.params.len() != args.len() {
-            return self.goal(inapplicable); // wrong arity
-        }
-
-        let mut applicable_rules = applicable_rules.clone();
-        applicable_rules.push(rule.clone());
-        let applicable = Goal::FilterRules {
-            args: args.clone(),
-            applicable_rules,
-            unfiltered_rules,
-        };
-
-        // The prefilter already checks applicability for ground rules.
-        if rule.is_ground() {
-            return self.goal(applicable);
-        }
-        // Rename the variables in the rule (but not the args).
-        // This avoids clashes between arg vars and rule vars.
-        let Rule { params, .. } = self.rename_rule_vars(&rule);
-        let mut check_applicability = vec![];
-        for (arg, param) in args.iter().zip(params.iter()) {
-            check_applicability.push(Goal::Unify(arg.clone(), param.parameter.clone()));
-            if let Some(specializer) = &param.specializer {
-                check_applicability.push(Goal::Isa(
-                    arg.clone(),
-                    specializer.clone(),
-                ));
-            }
-        }
-        self.choose_conditional(check_applicability, vec![applicable], vec![inapplicable])
-    }
-
-    /// Sort a list of rules with respect to a list of arguments
-    /// using an explicit-state insertion sort.
-    ///
-    /// We maintain two indices for the sort, `outer` and `inner`. The `outer` index tracks our
-    /// sorting progress. Every rule at or below `outer` is sorted; every rule above it is
-    /// unsorted. The `inner` index tracks our search through the sorted sublist for the correct
-    /// position of the candidate rule (the rule at the head of the unsorted portion of the
-    /// list).
-    #[allow(clippy::ptr_arg)]
-    fn sort_rules(
-        &mut self,
-        rules: &Rules,
-        args: &TermList,
-        outer: usize,
-        inner: usize,
-    ) -> PolarResult<&mut Self> {
-        if rules.is_empty() { return Self::nope() }
-
-        assert!(outer <= rules.len(), "bad outer index");
-        assert!(inner <= rules.len(), "bad inner index");
-        assert!(inner <= outer, "bad insertion sort state");
-
-        let next_outer = Goal::SortRules {
-            rules: rules.clone(),
-            args: args.clone(),
-            outer: outer + 1,
-            inner: outer + 1,
-        };
-        // Because `outer` starts as `1`, if there is only one rule in the `Rules`, this check
-        // fails and we jump down to the evaluation of that lone rule.
-        if outer < rules.len() {
-            if inner <= 0 {
-                assert_eq!(inner, 0);
-                self.goal(next_outer)
-            } else {
-                let compare = Goal::IsMoreSpecific {
-                    left: rules[inner].clone(),
-                    right: rules[inner - 1].clone(),
-                    args: args.clone(),
-                };
-
-                let mut rules = rules.clone();
-                rules.swap(inner - 1, inner);
-                let next_inner = Goal::SortRules {
-                    rules,
-                    outer,
-                    inner: inner - 1,
-                    args: args.clone(),
-                };
-                self.choose_conditional(vec![compare], vec![next_inner], vec![next_outer])
-            }
-        } else {
-            // We're done; the rules are sorted.
-            // Make alternatives for calling them.
-
-            self.polar_log_mute = false;
-            self.log_with(
-                || {
-                    let mut rule_strs = "APPLICABLE_RULES:".to_owned();
-                    for rule in rules {
-                        rule_strs.push_str(&format!("\n  {}", rule.to_polar()));
-                    }
-                    rule_strs
-                },
-                &[],
-            );
-
-            let mut alternatives = Vec::with_capacity(rules.len());
-            for rule in rules.iter() {
-                let mut goals = Vec::with_capacity(2 * args.len() + 4);
-                goals.push(Goal::TraceRule(
+    fn call_rules(&mut self, rules: &Rules, args: &TermList) -> PolarResult<&mut Self> {
+        let mut alternatives = Vec::with_capacity(rules.len());
+        for rule in rules.iter() {
+            let mut goals = vec![
+                Goal::TraceRule(
                     Rc::new(Trace {
                         node: Node::Rule(rule.clone()),
                         children: vec![],
-                    }),
-                ));
-                goals.push(Goal::TraceStackPush);
-                let Rule { body, params, .. } = self.rename_rule_vars(rule);
+                    })),
+                Goal::TraceStackPush
+            ];
+            let Rule { body, params, .. } = self.rename_rule_vars(rule);
 
-                // Unify the arguments with the formal parameters.
-                for (arg, param) in args.iter().zip(params.iter()) {
-                    goals.push(Goal::Unify(arg.clone(), param.parameter.clone()));
-                    if let Some(specializer) = &param.specializer {
-                        goals.push(Goal::Isa(
-                            param.parameter.clone(),
-                            specializer.clone(),
-                        ));
-                    }
+            // Unify the arguments with the formal parameters.
+            for (arg, param) in args.iter().zip(params.iter()) {
+                goals.push(Goal::Unify(arg.clone(), param.parameter.clone()));
+                if let Some(specializer) = &param.specializer {
+                    goals.push(Goal::Isa(
+                        param.parameter.clone(),
+                        specializer.clone(),
+                    ));
                 }
-
-                // Query for the body clauses.
-                goals.push(Goal::Query(body.clone()));
-                goals.push(Goal::TraceStackPop);
-
-                alternatives.push(goals)
             }
 
-            // Choose the first alternative, and push a choice for the rest.
-            self.choose(alternatives)
+            // Query for the body clauses.
+            goals.push(Goal::Query(body.clone()));
+            goals.push(Goal::TraceStackPop);
+
+            alternatives.push(goals)
         }
+
+        // Choose the first alternative, and push a choice for the rest.
+        self.choose(alternatives)
     }
 
     /// Succeed if `left` is more specific than `right` with respect to `args`.
@@ -2863,150 +2716,6 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_rules() {
-        let rule_a = Arc::new(rule!("bar", ["_"; instance!("a")]));
-        let rule_b = Arc::new(rule!("bar", ["_"; instance!("b")]));
-        let rule_1a = Arc::new(rule!("bar", [value!(1)]));
-        let rule_1b = Arc::new(rule!("bar", ["_"; value!(1)]));
-
-        let gen_rule = GenericRule::new(sym!("bar"), vec![rule_a, rule_b, rule_1a, rule_1b]);
-        let mut kb = KnowledgeBase::new();
-        kb.add_generic_rule(gen_rule);
-
-        let kb = Arc::new(RwLock::new(kb));
-
-        let external_instance = Value::ExternalInstance(ExternalInstance {
-            instance_id: 1,
-            constructor: None,
-            repr: None,
-        });
-        let query = query!(call!("bar", [sym!("x")]));
-        let mut vm = PolarVirtualMachine::new_test(kb.clone(), false, vec![query]);
-        vm.bind(&term!(sym!("x")), Term::new_from_test(external_instance))
-            .unwrap();
-
-        let mut external_isas = vec![];
-
-        loop {
-            match vm.run(None).unwrap() {
-                QueryEvent::Done { .. } => break,
-                QueryEvent::ExternalIsa {
-                    call_id, class_tag, ..
-                } => {
-                    external_isas.push(class_tag.clone());
-                    // Return `true` if the specified `class_tag` is `"a"`.
-                    vm.external_question_result(call_id, class_tag.0 == "a")
-                        .unwrap()
-                }
-                QueryEvent::ExternalOp { .. }
-                | QueryEvent::ExternalIsSubSpecializer { .. }
-                | QueryEvent::Result { .. } => (),
-                e => panic!("Unexpected event: {:?}", e),
-            }
-        }
-
-        let expected = vec![sym!("b"), sym!("a"), sym!("a")];
-        assert_eq!(external_isas, expected);
-
-        let query = query!(call!("bar", [sym!("x")]));
-        let mut vm = PolarVirtualMachine::new_test(kb, false, vec![query]);
-        vm.bind(&term!(sym!("x")), Term::new_from_test(value!(1))).unwrap();
-
-        let mut results = vec![];
-        loop {
-            match vm.run(None).unwrap() {
-                QueryEvent::Done { .. } => break,
-                QueryEvent::ExternalIsa { .. } => (),
-                QueryEvent::Result { bindings, .. } => results.push(bindings),
-                e => panic!("Unexpected event: {:?}", e),
-            }
-        }
-
-        assert_eq!(results.len(), 2);
-        assert_eq!(
-            results,
-            vec![
-                hashmap! {sym!("x") => term!(1)},
-                hashmap! {sym!("x") => term!(1)},
-            ]
-        );
-    }
-
-    #[test]
-    fn test_sort_rules() {
-        // Test sort rule by mocking ExternalIsSubSpecializer and ExternalIsa.
-        let bar_rule = GenericRule::new(
-            sym!("bar"),
-            vec![
-                Arc::new(rule!("bar", ["_"; instance!("b"), "_"; instance!("a"), value!(3)])),
-                Arc::new(rule!("bar", ["_"; instance!("a"), "_"; instance!("a"), value!(1)])),
-                Arc::new(rule!("bar", ["_"; instance!("a"), "_"; instance!("b"), value!(2)])),
-                Arc::new(rule!("bar", ["_"; instance!("b"), "_"; instance!("b"), value!(4)])),
-            ],
-        );
-
-        let mut kb = KnowledgeBase::new();
-        kb.add_generic_rule(bar_rule);
-
-        let external_instance = Value::ExternalInstance(ExternalInstance {
-            instance_id: 1,
-            constructor: None,
-            repr: None,
-        });
-
-        let mut vm = PolarVirtualMachine::new_test(
-            Arc::new(RwLock::new(kb)),
-            false,
-            vec![query!(call!(
-                "bar",
-                [external_instance.clone(), external_instance, sym!("z")]
-            ))],
-        );
-
-        let mut results = Vec::new();
-        loop {
-            match vm.run(None).unwrap() {
-                QueryEvent::Done { .. } => break,
-                QueryEvent::Result { bindings, .. } => results.push(bindings),
-                QueryEvent::ExternalIsSubSpecializer {
-                    call_id,
-                    left_class_tag,
-                    right_class_tag,
-                    ..
-                } => {
-                    // For this test we sort classes lexically.
-                    vm.external_question_result(call_id, left_class_tag < right_class_tag)
-                        .unwrap()
-                }
-                QueryEvent::MakeExternal { .. } => (),
-
-                QueryEvent::ExternalOp {
-                    operator: Operator::Eq,
-                    call_id,
-                    ..
-                } => vm.external_question_result(call_id, true).unwrap(),
-
-                QueryEvent::ExternalIsa { call_id, .. } => {
-                    // For this test, anything is anything.
-                    vm.external_question_result(call_id, true).unwrap()
-                }
-                e => panic!("Unexpected event: {:?}", e),
-            }
-        }
-
-        assert_eq!(results.len(), 4);
-        assert_eq!(
-            results,
-            vec![
-                hashmap! {sym!("z") => term!(1)},
-                hashmap! {sym!("z") => term!(2)},
-                hashmap! {sym!("z") => term!(3)},
-                hashmap! {sym!("z") => term!(4)},
-            ]
-        );
-    }
-
-    #[test]
     fn test_is_subspecializer() {
         let mut vm = PolarVirtualMachine::default();
 
@@ -3087,40 +2796,6 @@ mod tests {
         }
     }
     */
-
-    #[test]
-    fn test_prefiltering() {
-        let bar_rule = GenericRule::new(
-            sym!("bar"),
-            vec![
-                Arc::new(rule!("bar", [value!([1])])),
-                Arc::new(rule!("bar", [value!([2])])),
-            ],
-        );
-
-        let mut kb = KnowledgeBase::new();
-        kb.add_generic_rule(bar_rule);
-
-        let mut vm = PolarVirtualMachine::new_test(Arc::new(RwLock::new(kb)), false, vec![]);
-        vm.bind(&term!(sym!("x")), term!(1)).unwrap();
-        let _ = vm.run(None);
-        let _ = vm.run_goal(Rc::new(query!(call!("bar", [value!([sym!("x")])]))));
-        // After calling the query goal we should be left with the
-        // prefiltered rules
-        let next_goal = vm
-            .goals
-            .iter()
-            .find(|g| matches!(g.as_ref(), Goal::FilterRules { .. }))
-            .unwrap();
-        let goal_debug = format!("{:#?}", next_goal);
-        assert!(
-            matches!(next_goal.as_ref(), Goal::FilterRules {
-            ref applicable_rules, ref unfiltered_rules, ..
-        } if unfiltered_rules.len() == 1 && applicable_rules.is_empty()),
-            "Goal should contain just one prefiltered rule: {}",
-            goal_debug
-        );
-    }
 
     #[test]
     fn choose_conditional() {

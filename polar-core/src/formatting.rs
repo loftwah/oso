@@ -273,27 +273,14 @@ pub mod display {
                 Goal::PopQuery(term) => write!(fmt, "PopQuery({})", term.to_polar()),
                 Goal::Query(term) => write!(fmt, "Query({})", term.to_polar()),
                 Goal::Run(_) => write!(fmt, "Run(...)"),
-                Goal::FilterRules {
-                    applicable_rules,
-                    unfiltered_rules,
-                    ..
-                } => write!(
-                    fmt,
-                    "FilterRules([{}], [{}])",
-                    fmt_rules(applicable_rules),
-                    fmt_rules(unfiltered_rules),
-                ),
-                Goal::SortRules {
+                Goal::CallRules {
                     rules,
-                    outer,
-                    inner,
-                    ..
+                    args,
                 } => write!(
                     fmt,
-                    "SortRules([{}], outer={}, inner={})",
+                    "CallRules([{}], [{}])",
                     fmt_rules(rules),
-                    outer,
-                    inner,
+                    args.iter().map(|a|a.to_polar()).collect::<Vec<_>>().join(", ")
                 ),
                 Goal::TraceRule(_) => write!(
                     fmt,
