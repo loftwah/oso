@@ -487,7 +487,7 @@ public class Host implements Cloneable {
       inner.put("other_class_tag", otherClassName);
       inner.put("my_field", myField);
       inner.put("other_field", otherField);
-      outer.put("Relationship", inner);
+      outer.put("Relation", inner);
       return outer;
     }
 
