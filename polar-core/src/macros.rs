@@ -136,16 +136,10 @@ macro_rules! call {
 #[macro_export]
 macro_rules! op {
     ($op_type:ident, $($args:expr),+) => {
-        Operation {
-            operator: Operator::$op_type,
-            args: vec![$($args),+]
-        }
+        Operation(Operator::$op_type, vec![$($args),+])
     };
     ($op_type:ident) => {
-        Operation {
-            operator: Operator::$op_type,
-            args: vec![]
-        }
+        Operation(Operator::$op_type, vec![])
     };
 }
 

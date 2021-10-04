@@ -147,8 +147,8 @@ pub fn walk_list<V: Visitor>(visitor: &mut V, list: &TermList) {
 }
 
 pub fn walk_operation<V: Visitor>(visitor: &mut V, expr: &Operation) {
-    visitor.visit_operator(&expr.operator);
-    walk_elements!(visitor, visit_term, &expr.args);
+    visitor.visit_operator(&expr.0);
+    walk_elements!(visitor, visit_term, &expr.1);
 }
 
 pub fn walk_param<V: Visitor>(visitor: &mut V, param: &Parameter) {
@@ -198,10 +198,7 @@ mod tests {
             self.push(Value::RestVariable(r.clone()));
         }
         fn visit_operator(&mut self, o: &Operator) {
-            self.push(Value::Expression(Operation {
-                operator: *o,
-                args: vec![],
-            }));
+            self.push(Value::Expression(Operation(*o, vec![])));
         }
     }
 

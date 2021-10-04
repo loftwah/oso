@@ -80,9 +80,9 @@ pub fn sub_this(this: Symbol, term: Term) -> Term {
 /// Turn `_this = x` into `x` when it's ground.
 fn simplify_trivial_constraint(this: Symbol, term: Term) -> Term {
     match term.value() {
-        Value::Expression(o) if o.operator == Operator::Unify => {
-            let left = &o.args[0];
-            let right = &o.args[1];
+        Value::Expression(Operation(Operator::Unify, args)) => {
+            let left = &args[0];
+            let right = &args[1];
             match (left.value(), right.value()) {
                 (Value::Variable(v), Value::Variable(w))
                 | (Value::Variable(v), Value::RestVariable(w))
@@ -120,7 +120,7 @@ pub fn simplify_partial(
     simplifier.simplify_partial(&mut term);
     term = simplify_trivial_constraint(var.clone(), term);
     simplify_debug!("simplify partial done {:?}, {:?}", var, term.to_polar());
-    if matches!(term.value(), Value::Expression(e) if e.operator != Operator::And) {
+    if matches!(term.value(), Value::Expression(op) if op.0 != Operator::And) {
         (op!(And, term).into(), simplifier.perf_counters())
     } else {
         (term, simplifier.perf_counters())
@@ -144,8 +144,8 @@ pub fn simplify_bindings(bindings: Bindings, all: bool) -> Option<Bindings> {
 
     let mut unsatisfiable = false;
     let mut simplify_var = |bindings: &Bindings, var: &Symbol, value: &Term| match value.value() {
-        Value::Expression(o) => {
-            assert_eq!(o.operator, Operator::And);
+        Value::Expression(Operation(op, _)) => {
+            assert_eq!(*op, Operator::And);
             let output_vars = if all {
                 let mut hs = HashSet::with_capacity(1);
                 hs.insert(var.clone());
@@ -357,14 +357,14 @@ impl Simplifier {
     /// Params:
     ///     constraint: The constraint to consider removing from its parent.
     fn maybe_bind_constraint(&mut self, constraint: &Operation) -> MaybeDrop {
-        match constraint.operator {
+        match constraint.0 {
             // X and X is always true, so drop.
-            Operator::And if constraint.args.is_empty() => MaybeDrop::Drop,
+            Operator::And if constraint.1.is_empty() => MaybeDrop::Drop,
 
             // Choose a unification to maybe drop.
             Operator::Unify | Operator::Eq => {
-                let left = &constraint.args[0];
-                let right = &constraint.args[1];
+                let left = &constraint.1[0];
+                let right = &constraint.1[1];
 
                 if left == right {
                     // The sides are exactly equal, so drop.
@@ -420,31 +420,29 @@ impl Simplifier {
     ) {
         fn toss_trivial_unifies(args: &mut TermList) {
             args.retain(|c| {
-                let o = c.value().as_expression().unwrap();
-                match o.operator {
+                let Operation(op, args) = c.value().as_expression().unwrap();
+                match op {
                     Operator::Unify | Operator::Eq => {
-                        assert_eq!(o.args.len(), 2);
-                        let left = &o.args[0];
-                        let right = &o.args[1];
-                        left != right
+                        assert_eq!(args.len(), 2);
+                        &args[0] != &args[1]
                     }
                     _ => true,
                 }
             });
         }
 
-        if o.operator == Operator::And || o.operator == Operator::Or {
-            toss_trivial_unifies(&mut o.args);
+        if o.0 == Operator::And || o.0 == Operator::Or {
+            toss_trivial_unifies(&mut o.1);
         }
 
-        match o.operator {
+        match o.0 {
             // Zero-argument conjunctions & disjunctions represent constants
             // TRUE and FALSE, respectively. We do not simplify them.
-            Operator::And | Operator::Or if o.args.is_empty() => (),
+            Operator::And | Operator::Or if o.1.is_empty() => (),
 
             // Replace one-argument conjunctions & disjunctions with their argument.
-            Operator::And | Operator::Or if o.args.len() == 1 => {
-                if let Value::Expression(operation) = o.args[0].value() {
+            Operator::And | Operator::Or if o.1.len() == 1 => {
+                if let Value::Expression(operation) = o.1[0].value() {
                     *o = operation.clone();
                     self.simplify_operation_variables(o, simplify_term);
                 }
@@ -452,11 +450,11 @@ impl Simplifier {
 
             // Non-trivial conjunctions. Choose unification constraints
             // to make bindings from and throw away; fold the rest.
-            Operator::And if o.args.len() > 1 => {
+            Operator::And if o.1.len() > 1 => {
                 // Compute which constraints to keep.
-                let mut keep = o.args.iter().map(|_| true).collect::<Vec<bool>>();
-                let mut references = o.args.iter().map(|_| false).collect::<Vec<bool>>();
-                for (i, arg) in o.args.iter().enumerate() {
+                let mut keep = o.1.iter().map(|_| true).collect::<Vec<bool>>();
+                let mut references = o.1.iter().map(|_| false).collect::<Vec<bool>>();
+                for (i, arg) in o.1.iter().enumerate() {
                     match self.maybe_bind_constraint(arg.value().as_expression().unwrap()) {
                         MaybeDrop::Keep => (),
                         MaybeDrop::Drop => keep[i] = false,
@@ -467,7 +465,7 @@ impl Simplifier {
                         }
                         MaybeDrop::Check(var, value) => {
                             simplify_debug!("check {:?}, {:?}", var.to_polar(), value.to_polar());
-                            for (j, arg) in o.args.iter().enumerate() {
+                            for (j, arg) in o.1.iter().enumerate() {
                                 if j != i && arg.contains_variable(&var) {
                                     simplify_debug!(
                                         "check bind {:?}, {:?} ref: {}",
@@ -489,13 +487,13 @@ impl Simplifier {
 
                 // Drop the rest.
                 let mut i = 0;
-                o.args.retain(|_| {
+                o.1.retain(|_| {
                     i += 1;
                     keep[i - 1] || references[i - 1]
                 });
 
                 // Simplify the survivors.
-                for arg in &mut o.args {
+                for arg in &mut o.1 {
                     simplify_term(self, arg);
                 }
             }
@@ -503,8 +501,8 @@ impl Simplifier {
             // Negation. Simplify the negated term, saving & restoring the
             // current bindings because bindings may not leak out of a negation.
             Operator::Not => {
-                assert_eq!(o.args.len(), 1);
-                let mut simplified = o.args[0].clone();
+                assert_eq!(o.1.len(), 1);
+                let mut simplified = o.1[0].clone();
                 let mut simplifier = self.clone();
                 simplifier.simplify_partial(&mut simplified);
                 *o = invert_operation(
@@ -518,7 +516,7 @@ impl Simplifier {
 
             // Default case.
             _ => {
-                for arg in &mut o.args {
+                for arg in &mut o.1 {
                     simplify_term(self, arg);
                 }
             }
@@ -540,17 +538,17 @@ impl Simplifier {
             });
         }
 
-        if o.operator == Operator::And {
+        if o.0 == Operator::And {
             self.counters.preprocess_and();
-            preprocess_and(&mut o.args);
+            preprocess_and(&mut o.1);
         }
 
-        match o.operator {
-            Operator::And | Operator::Or if o.args.is_empty() => (),
+        match o.0 {
+            Operator::And | Operator::Or if o.1.is_empty() => (),
 
             // Replace one-argument conjunctions & disjunctions with their argument.
-            Operator::And | Operator::Or if o.args.len() == 1 => {
-                if let Value::Expression(operation) = o.args[0].value() {
+            Operator::And | Operator::Or if o.1.len() == 1 => {
+                if let Value::Expression(operation) = o.1[0].value() {
                     *o = operation.clone();
                     self.deduplicate_operation(o, simplify_term);
                 }
@@ -558,7 +556,7 @@ impl Simplifier {
 
             // Default case.
             _ => {
-                for arg in &mut o.args {
+                for arg in &mut o.1 {
                     simplify_term(self, arg);
                 }
             }

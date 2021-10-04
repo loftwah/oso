@@ -6,7 +6,7 @@ use super::rules::*;
 use super::terms::*;
 
 /// Rename each non-constant variable in a term or rule to a fresh variable.
-pub struct Renamer<'kb> {
+struct Renamer<'kb> {
     kb: &'kb KnowledgeBase,
     renames: HashMap<Symbol, Symbol>,
 }
@@ -57,7 +57,7 @@ impl<'kb> Rewriter<'kb> {
 
     /// Return true if the expression should be rewritten.
     fn needs_rewrite(&self, o: &Operation) -> bool {
-        match o.operator {
+        match o.0 {
             Operator::Add
             | Operator::Dot
             | Operator::Div
@@ -65,11 +65,11 @@ impl<'kb> Rewriter<'kb> {
             | Operator::Sub
             | Operator::Mod
             | Operator::Rem
-                if o.args.len() == 2 =>
+                if o.1.len() == 2 =>
             {
                 true
             }
-            Operator::New if o.args.len() == 1 => true,
+            Operator::New if o.1.len() == 1 => true,
             _ => false,
         }
     }
@@ -82,6 +82,10 @@ fn temp_name(o: &Operator) -> &'static str {
         Operator::New => "instance",
         _ => "temp",
     }
+}
+
+pub fn rename(kb: &KnowledgeBase, rule: Rule) -> Rule {
+    Renamer::new(kb).fold_rule(rule)
 }
 
 /// Replace `o(a, b)` with `_c`, where `_c = o(a, b)`.
@@ -105,10 +109,10 @@ impl<'kb> Folder for Rewriter<'kb> {
         let rewrites = self.stack.pop().unwrap();
         if !rewrites.is_empty() {
             let terms = unwrap_and(&body);
-            body.replace_value(Value::Expression(Operation {
-                operator: Operator::And,
-                args: terms.into_iter().chain(rewrites).collect(),
-            }));
+            body.replace_value(Value::Expression(Operation(
+                Operator::And,
+                terms.into_iter().chain(rewrites).collect(),
+            )));
         }
         Rule {
             name,
@@ -136,8 +140,8 @@ impl<'kb> Folder for Rewriter<'kb> {
             Value::Expression(o) if self.needs_rewrite(o) => {
                 // Rewrite sub-expressions, then push a temp onto the args.
                 let mut new = fold_operation(o.clone(), self);
-                let temp = Value::Variable(self.kb.gensym(temp_name(&o.operator)));
-                new.args.push(Term::from(temp.clone()));
+                let temp = Value::Variable(self.kb.gensym(temp_name(&o.0)));
+                new.1.push(Term::from(temp.clone()));
 
                 // Push the rewritten expression into the top stack frame.
                 self.stack
@@ -153,14 +157,12 @@ impl<'kb> Folder for Rewriter<'kb> {
     }
 
     fn fold_operation(&mut self, o: Operation) -> Operation {
-        match o.operator {
-            Operator::And | Operator::Or | Operator::Not => Operation {
-                operator: fold_operator(o.operator, self),
-                args: o
-                    .args
-                    .into_iter()
+        match o.0 {
+            Operator::And | Operator::Or | Operator::Not => Operation(
+                fold_operator(o.0, self),
+                o.1.into_iter()
                     .map(|arg| {
-                        let arg_operator = arg.value().as_expression().map(|e| e.operator).ok();
+                        let arg_operator = arg.value().as_expression().map(|e| e.0).ok();
 
                         self.stack.push(vec![]);
                         let mut arg = self.fold_term(arg);
@@ -196,7 +198,7 @@ impl<'kb> Folder for Rewriter<'kb> {
                         arg
                     })
                     .collect(),
-            },
+            ),
             _ => fold_operation(o, self),
         }
     }
@@ -222,35 +224,26 @@ fn only_dots(rewrites: &[Term]) -> bool {
     rewrites.iter().all(|t| {
         t.value()
             .as_expression()
-            .map_or(false, |op| op.operator == Operator::Dot)
+            .map_or(false, |op| op.0 == Operator::Dot)
     })
 }
 
 /// Replace the left value with And(right, left).
 fn and_prepend(left: &mut Term, right: Term) {
-    let new_value = Value::Expression(Operation {
-        operator: Operator::And,
-        args: vec![right, left.clone()],
-    });
+    let new_value = Value::Expression(Operation(Operator::And, vec![right, left.clone()]));
     left.replace_value(new_value);
 }
 
 /// Replace the left value with And(left, right).
 fn and_append(left: &mut Term, right: Term) {
-    let new_value = Value::Expression(Operation {
-        operator: Operator::And,
-        args: vec![left.clone(), right],
-    });
+    let new_value = Value::Expression(Operation(Operator::And, vec![left.clone(), right]));
     left.replace_value(new_value);
 }
 
 /// Return a cloned list of arguments from And(*args).
 pub fn unwrap_and(term: &Term) -> TermList {
     match term.value() {
-        Value::Expression(Operation {
-            operator: Operator::And,
-            args,
-        }) => args.clone(),
+        Value::Expression(Operation(Operator::And, args)) => args.clone(),
         _ => panic!("expected And, found {}", term.to_polar()),
     }
 }

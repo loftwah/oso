@@ -264,10 +264,9 @@ impl BindingManager {
                 match op.ground(var, val.clone()) {
                     Some(o) => op = o,
                     None => {
-                        return Err(RuntimeError::IncompatibleBindings {
-                            msg: "Grounding failed B".into(),
-                        }
-                        .into())
+                        return Err(
+                            RuntimeError::IncompatibleBindings("Grounding failed B".into()).into(),
+                        )
                     }
                 }
             }

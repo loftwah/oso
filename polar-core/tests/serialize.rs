@@ -70,10 +70,10 @@ mod tests {
         let rule = Rule::new_from_test(
             Symbol::new("foo"),
             vec![],
-            Term::new_temporary(Value::Expression(Operation {
-                operator: Operator::And,
-                args: vec![dict.clone(), dict.clone(), dict],
-            })),
+            Term::new_temporary(Value::Expression(Operation(
+                Operator::And,
+                vec![dict.clone(), dict.clone(), dict],
+            ))),
         );
         eprintln!("{}", rule);
     }

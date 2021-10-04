@@ -1,8 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::{fmt, ops};
 
-use crate::sources::*;
-use crate::terms::*;
+use crate::{lexer::loc_to_pos, sources::*, terms::*, vm::PolarVirtualMachine};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(into = "FormattedPolarError")]
@@ -58,7 +57,7 @@ impl PolarError {
                 | ParseError::DuplicateKey { loc, .. }
                 | ParseError::SingletonVariable { loc, .. }
                 | ParseError::ResourceBlock { loc, .. } => {
-                    let (row, column) = crate::lexer::loc_to_pos(&source.src, *loc);
+                    let (row, column) = loc_to_pos(&source.src, *loc);
                     self.context.replace(ErrorContext {
                         source: source.clone(),
                         row,
@@ -68,7 +67,7 @@ impl PolarError {
                 _ => {}
             },
             (_, Some(source), Some(term)) => {
-                let (row, column) = crate::lexer::loc_to_pos(&source.src, term.offset());
+                let (row, column) = loc_to_pos(&source.src, term.offset());
                 self.context.replace(ErrorContext {
                     source: source.clone(),
                     row,
@@ -314,44 +313,23 @@ impl fmt::Display for ParseError {
 // @TODO: Information about the context of the error.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RuntimeError {
-    ArithmeticError {
-        msg: String,
-    },
-    Serialization {
-        msg: String,
-    },
-    Unsupported {
-        msg: String,
-    },
-    TypeError {
-        msg: String,
-        stack_trace: Option<String>,
-    },
-    UnboundVariable {
-        sym: Symbol,
-    },
-    StackOverflow {
-        msg: String,
-    },
-    QueryTimeout {
-        msg: String,
-    },
-    Application {
-        msg: String,
-        stack_trace: Option<String>,
-    },
-    FileLoading {
-        msg: String,
-    },
-    IncompatibleBindings {
-        msg: String,
-    },
+    ArithmeticError(String),
+    Serialization(String),
+    Unsupported(String),
+    StackOverflow(String),
+    QueryTimeout(String),
+    FileLoading(String),
+    IncompatibleBindings(String),
+    UnboundVariable(Symbol),
+    // these two have an optional stack trace
+    Application(String, Option<String>),
+    TypeError(String, Option<String>),
 }
 
 impl RuntimeError {
-    pub fn add_stack_trace(&mut self, vm: &crate::vm::PolarVirtualMachine) {
+    pub fn add_stack_trace(&mut self, vm: &PolarVirtualMachine) {
         match self {
-            Self::Application { stack_trace, .. } | Self::TypeError { stack_trace, .. } => {
+            Self::Application(_, stack_trace) | Self::TypeError(_, stack_trace) => {
                 *stack_trace = Some(vm.stack_trace())
             }
             _ => {}
@@ -362,26 +340,26 @@ impl RuntimeError {
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::ArithmeticError { msg } => write!(f, "Arithmetic error: {}", msg),
-            Self::Serialization { msg } => write!(f, "Serialization error: {}", msg),
-            Self::Unsupported { msg } => write!(f, "Not supported: {}", msg),
-            Self::TypeError { msg, stack_trace } => {
+            Self::ArithmeticError(msg) => write!(f, "Arithmetic error: {}", msg),
+            Self::Serialization(msg) => write!(f, "Serialization error: {}", msg),
+            Self::Unsupported(msg) => write!(f, "Not supported: {}", msg),
+            Self::TypeError(msg, stack_trace) => {
                 if let Some(stack_trace) = stack_trace {
                     writeln!(f, "{}", stack_trace)?;
                 }
                 write!(f, "Type error: {}", msg)
             }
-            Self::UnboundVariable { sym } => write!(f, "{} is an unbound variable", sym.0),
-            Self::StackOverflow { msg } => write!(f, "Hit a stack limit: {}", msg),
-            Self::QueryTimeout { msg } => write!(f, "Query timeout: {}", msg),
-            Self::Application { msg, stack_trace } => {
+            Self::UnboundVariable(sym) => write!(f, "{} is an unbound variable", sym.0),
+            Self::StackOverflow(msg) => write!(f, "Hit a stack limit: {}", msg),
+            Self::QueryTimeout(msg) => write!(f, "Query timeout: {}", msg),
+            Self::Application(msg, stack_trace) => {
                 if let Some(stack_trace) = stack_trace {
                     writeln!(f, "{}", stack_trace)?;
                 }
                 write!(f, "Application error: {}", msg)
             }
-            Self::FileLoading { msg } => write!(f, "Problem loading file: {}", msg),
-            Self::IncompatibleBindings { msg } => {
+            Self::FileLoading(msg) => write!(f, "Problem loading file: {}", msg),
+            Self::IncompatibleBindings(msg) => {
                 write!(f, "Attempted binding was incompatible: {}", msg)
             }
         }

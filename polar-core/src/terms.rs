@@ -29,6 +29,10 @@ impl Dictionary {
     pub fn is_empty(&self) -> bool {
         self.fields.is_empty()
     }
+
+    pub fn keys<'a>(&'a self) -> HashSet<&'a Symbol> {
+        self.fields.keys().collect()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -141,12 +145,14 @@ pub enum Operator {
     Or,
     And,
     ForAll,
-    Assign,
 }
 
 impl Operator {
     pub fn is_math(&self) -> bool {
-        matches!(self, Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem)
+        matches!(
+            self,
+            Self::Add | Self::Sub | Self::Mul | Self::Div | Self::Rem
+        )
     }
 
     pub fn is_cmp(&self) -> bool {
@@ -164,9 +170,12 @@ impl Operator {
         match (l, r) {
             (Value::String(l), Value::String(r)) => self.cmp_ord(l, r),
             (Value::Number(l), Value::Number(r)) => self.cmp_ord(l, r),
-            _ => Err(RuntimeError::Unsupported {
-                msg: format!("{} {} {}", l.to_polar(), self.to_polar(), r.to_polar()),
-            }
+            _ => Err(RuntimeError::Unsupported(format!(
+                "{} {} {}",
+                l.to_polar(),
+                self.to_polar(),
+                r.to_polar()
+            ))
             .into()),
         }
     }
@@ -180,17 +189,14 @@ impl Operator {
             Operator::Neq => Ok(l != r),
             _ => {
                 let msg = format!("`{}` is not a comparison operator", self.to_polar());
-                Err(RuntimeError::Unsupported { msg }.into())
+                Err(RuntimeError::Unsupported(msg).into())
             }
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
-pub struct Operation {
-    pub operator: Operator,
-    pub args: TermList,
-}
+pub struct Operation(pub Operator, pub TermList);
 
 /// Represents a pattern in a specializer or after isa.
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, Hash)]
@@ -226,70 +232,70 @@ impl Value {
         match self {
             Value::Variable(name) => Ok(name),
             Value::RestVariable(name) => Ok(name),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected symbol, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected symbol, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_string(&self) -> Result<&str, RuntimeError> {
         match self {
             Value::String(string) => Ok(string.as_ref()),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected string, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected string, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_expression(&self) -> Result<&Operation, RuntimeError> {
         match self {
             Value::Expression(op) => Ok(op),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected expression, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected expression, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_call(&self) -> Result<&Call, RuntimeError> {
         match self {
             Value::Call(pred) => Ok(pred),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected call, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected call, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_pattern(&self) -> Result<&Pattern, RuntimeError> {
         match self {
             Value::Pattern(p) => Ok(p),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected pattern, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected pattern, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_list(&self) -> Result<&TermList, RuntimeError> {
         match self {
             Value::List(l) => Ok(l),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected list, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected list, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
     pub fn as_dict(&self) -> Result<&Dictionary, RuntimeError> {
         match self {
             Value::Dictionary(d) => Ok(d),
-            _ => Err(RuntimeError::TypeError {
-                msg: format!("Expected dictionary, got: {}", self.to_polar()),
-                stack_trace: None, // @TODO
-            }),
+            _ => Err(RuntimeError::TypeError(
+                format!("Expected dictionary, got: {}", self.to_polar()),
+                None, // @TODO
+            )),
         }
     }
 
@@ -303,9 +309,7 @@ impl Value {
             Value::Pattern(_) => panic!("unexpected value type"),
             Value::Dictionary(Dictionary { fields }) => fields.values().all(|t| t.is_ground()),
             Value::List(terms) => terms.iter().all(|t| t.is_ground()),
-            Value::Expression(Operation { operator: _, args }) => {
-                args.iter().all(|t| t.is_ground())
-            }
+            Value::Expression(Operation(_, args)) => args.iter().all(|t| t.is_ground()),
         }
     }
 }
@@ -624,6 +628,10 @@ impl Term {
         } else {
             None
         }
+    }
+
+    pub fn is_union(&self) -> bool {
+        self.is_actor_union() || self.is_resource_union()
     }
 
     pub fn is_actor_union(&self) -> bool {

@@ -1,8 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use super::error;
-use crate::error::ParameterError;
-use crate::error::{PolarError, PolarResult};
+use crate::error::*;
 
 pub use super::bindings::Bindings;
 use super::counter::Counter;
@@ -90,6 +88,11 @@ impl KnowledgeBase {
         Symbol(format!("{}{}", Self::temp_prefix(prefix), next))
     }
 
+    pub fn source(&self, term: &Term) -> Option<Source> {
+        term.get_source_id()
+            .and_then(|id| self.sources.get_source(id))
+    }
+
     /// Add a generic rule to the knowledge base.
     #[cfg(test)]
     pub fn add_generic_rule(&mut self, rule: GenericRule) {
@@ -135,7 +138,7 @@ impl KnowledgeBase {
                     if !found_match {
                         return Err(self.set_error_context(
                             &rule.body,
-                            error::ValidationError::InvalidRule {
+                            ValidationError::InvalidRule {
                                 rule: rule.to_polar(),
                                 msg,
                             },
@@ -195,7 +198,7 @@ impl KnowledgeBase {
                     Ok(RuleParamMatch::True)
                 }
             } else {
-                Err(error::OperationalError::InvalidState{msg: format!(
+                Err(OperationalError::InvalidState{msg: format!(
                     "All registered classes must have a registered MRO. Class {} does not have a registered MRO.",
                     &rule_instance.tag
                 )}.into())
@@ -319,10 +322,10 @@ impl KnowledgeBase {
             // List in rule head must be equal to or more specific than the list in the rule type head in order to match
             (Value::List(rule_type_list), Value::List(rule_list)) => {
                 if has_rest_var(rule_type_list) {
-                    return Err(error::RuntimeError::TypeError {
-                        msg: "Rule types cannot contain *rest variables.".to_string(),
-                        stack_trace: None,
-                    }
+                    return Err(RuntimeError::TypeError(
+                        "Rule types cannot contain *rest variables.".to_string(),
+                        None,
+                    )
                     .into());
                 }
                 if rule_type_list.iter().all(|t| rule_list.contains(t)) {
@@ -511,13 +514,13 @@ impl KnowledgeBase {
     /// Define a constant variable.
     pub fn constant(&mut self, name: Symbol, value: Term) -> PolarResult<()> {
         if name.0 == ACTOR_UNION_NAME || name.0 == RESOURCE_UNION_NAME {
-            return Err(error::RuntimeError::TypeError {
-                msg: format!(
+            return Err(RuntimeError::TypeError(
+                format!(
                     "Invalid attempt to register '{}'. '{}' is a built-in specializer.",
                     name.0, name.0
                 ),
-                stack_trace: None,
-            }
+                None,
+            )
             .into());
         }
         self.constants.insert(name, value);
@@ -617,27 +620,24 @@ impl KnowledgeBase {
             self.loaded_files.get(filename).is_some(),
         ) {
             (Some(other_file), true) if other_file == filename => {
-                return Err(error::RuntimeError::FileLoading {
-                    msg: format!("File {} has already been loaded.", filename),
-                }
+                return Err(RuntimeError::FileLoading(format!(
+                    "File {} has already been loaded.",
+                    filename
+                ))
                 .into())
             }
             (_, true) => {
-                return Err(error::RuntimeError::FileLoading {
-                    msg: format!(
-                        "A file with the name {}, but different contents has already been loaded.",
-                        filename
-                    ),
-                }
+                return Err(RuntimeError::FileLoading(format!(
+                    "A file with the name {}, but different contents has already been loaded.",
+                    filename
+                ))
                 .into());
             }
             (Some(other_file), _) => {
-                return Err(error::RuntimeError::FileLoading {
-                    msg: format!(
-                        "A file with the same contents as {} named {} has already been loaded.",
-                        filename, other_file
-                    ),
-                }
+                return Err(RuntimeError::FileLoading(format!(
+                    "A file with the same contents as {} named {} has already been loaded.",
+                    filename, other_file
+                ))
                 .into());
             }
             _ => {}
@@ -710,7 +710,6 @@ impl KnowledgeBase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::*;
 
     #[test]
     /// Test validation implemented in `check_file()`.
@@ -728,8 +727,8 @@ mod tests {
 
         // Cannot load source1 a second time.
         let msg = match kb.add_source(source1).unwrap_err() {
-            error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+            PolarError {
+                kind: ErrorKind::Runtime(RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),
@@ -742,8 +741,8 @@ mod tests {
             filename: Some(filename1.to_owned()),
         };
         let msg = match kb.add_source(source2).unwrap_err() {
-            error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+            PolarError {
+                kind: ErrorKind::Runtime(RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),
@@ -763,8 +762,8 @@ mod tests {
             filename: Some(filename2.to_owned()),
         };
         let msg = match kb.add_source(source3).unwrap_err() {
-            error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+            PolarError {
+                kind: ErrorKind::Runtime(RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),

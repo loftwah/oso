@@ -9,24 +9,21 @@
 //! In addition, there are special cases like traces and sources that have their own
 //! formatting requirements.
 
-use crate::rules::*;
-use crate::sources::*;
-use crate::terms::*;
-use crate::traces::*;
+use crate::{rules::*, sources::*, terms::*, traces::*, vm::PolarVirtualMachine};
 pub use display::*;
 pub use to_polar::*;
 
 impl Trace {
     /// Return the string representation of this `Trace`
-    pub fn draw(&self, vm: &crate::vm::PolarVirtualMachine) -> String {
+    pub fn draw(&self, vm: &PolarVirtualMachine) -> String {
         let mut res = String::new();
         self.draw_trace(vm, 0, &mut res);
         res
     }
 
-    fn draw_trace(&self, vm: &crate::vm::PolarVirtualMachine, nest: usize, res: &mut String) {
+    fn draw_trace(&self, vm: &PolarVirtualMachine, nest: usize, res: &mut String) {
         if matches!(&self.node, Node::Term(term)
-            if matches!(term.value(), Value::Expression(Operation { operator: Operator::And, ..})))
+                    if matches!(term.value(), Value::Expression(Operation(Operator::And, _))))
         {
             for c in &self.children {
                 c.draw_trace(vm, nest + 1, res);
@@ -141,7 +138,6 @@ fn precedence(o: &Operator) -> i32 {
         Operator::Gt => 5,
         Operator::Lt => 5,
         Operator::Unify => 4,
-        Operator::Assign => 4,
         Operator::Not => 3,
         Operator::And => 2,
         Operator::Or => 1,
@@ -152,9 +148,7 @@ fn precedence(o: &Operator) -> i32 {
 /// has a lower precedence than `op`.
 fn has_lower_pred(op: Operator, t: &Term) -> bool {
     match t.value() {
-        Value::Expression(Operation {
-            operator: other, ..
-        }) => precedence(&op) > precedence(other),
+        Value::Expression(Operation(other, _)) => precedence(&op) > precedence(other),
         _ => false,
     }
 }
@@ -297,10 +291,7 @@ pub mod display {
     impl fmt::Display for Rule {
         fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
             match &self.body.value() {
-                Value::Expression(Operation {
-                    operator: Operator::And,
-                    args,
-                }) => {
+                Value::Expression(Operation(Operator::And, args)) => {
                     if args.is_empty() {
                         write!(
                             fmt,
@@ -398,7 +389,6 @@ pub mod to_polar {
                 New => "new",
                 Dot => ".",
                 Unify => "=",
-                Assign => ":=",
                 In => "in",
                 Cut => "cut",
                 ForAll => "forall",
@@ -415,87 +405,75 @@ pub mod to_polar {
             use Operator::*;
             // Adds parentheses when sub expressions have lower precedence (which is what you would have had to have during initial parse)
             // Lets us spit out strings that would reparse to the same ast.
-            match self.operator {
+            match self.0 {
                 Debug => "debug()".to_owned(),
-                Print => format!("print({})", format_args(self.operator, &self.args, ", ")),
+                Print => format!("print({})", format_args(self.0, &self.1, ", ")),
                 Cut => "cut".to_owned(),
-                ForAll => format!(
-                    "forall({}, {})",
-                    self.args[0].to_polar(),
-                    self.args[1].to_polar()
-                ),
+                ForAll => format!("forall({}, {})", self.1[0].to_polar(), self.1[1].to_polar()),
                 New => {
-                    if self.args.len() == 1 {
-                        format!("new {}", to_polar_parens(self.operator, &self.args[0]))
+                    if self.1.len() == 1 {
+                        format!("new {}", to_polar_parens(self.0, &self.1[0]))
                     } else {
                         format!(
                             "new ({}, {})",
-                            to_polar_parens(self.operator, &self.args[0]),
-                            self.args[1].to_polar()
+                            to_polar_parens(self.0, &self.1[0]),
+                            self.1[1].to_polar()
                         )
                     }
                 }
                 // Lookup operator
                 Dot => {
-                    let call_term = if let Value::String(s) = self.args[1].value() {
+                    let call_term = if let Value::String(s) = self.1[1].value() {
                         s.to_string()
                     } else {
-                        self.args[1].to_polar()
+                        self.1[1].to_polar()
                     };
-                    match self.args.len() {
-                        2 => format!("{}.{}", self.args[0].to_polar(), call_term),
+                    match self.1.len() {
+                        2 => format!("{}.{}", self.1[0].to_polar(), call_term),
                         3 => format!(
                             "{}.{} = {}",
-                            self.args[0].to_polar(),
+                            self.1[0].to_polar(),
                             call_term,
-                            self.args[2].to_polar()
+                            self.1[2].to_polar()
                         ),
                         // Invalid
-                        _ => format!(".({})", format_args(self.operator, &self.args, ", ")),
+                        _ => format!(".({})", format_args(self.0, &self.1, ", ")),
                     }
                 }
                 // Unary operators
                 Not => format!(
                     "{} {}",
-                    self.operator.to_polar(),
-                    to_polar_parens(self.operator, &self.args[0])
+                    self.0.to_polar(),
+                    to_polar_parens(self.0, &self.1[0])
                 ),
                 // Binary operators
                 Mul | Div | Mod | Rem | Add | Sub | Eq | Geq | Leq | Neq | Gt | Lt | Unify
-                | Isa | In | Assign => match self.args.len() {
+                | Isa | In => match self.1.len() {
                     2 => format!(
                         "{} {} {}",
-                        to_polar_parens(self.operator, &self.args[0]),
-                        self.operator.to_polar(),
-                        to_polar_parens(self.operator, &self.args[1]),
+                        to_polar_parens(self.0, &self.1[0]),
+                        self.0.to_polar(),
+                        to_polar_parens(self.0, &self.1[1]),
                     ),
                     3 => format!(
                         "{} {} {} = {}",
-                        to_polar_parens(self.operator, &self.args[0]),
-                        self.operator.to_polar(),
-                        to_polar_parens(self.operator, &self.args[1]),
-                        to_polar_parens(self.operator, &self.args[2]),
+                        to_polar_parens(self.0, &self.1[0]),
+                        self.0.to_polar(),
+                        to_polar_parens(self.0, &self.1[1]),
+                        to_polar_parens(self.0, &self.1[2]),
                     ),
                     // Invalid
                     _ => format!(
                         "{}({})",
-                        self.operator.to_polar(),
-                        format_args(self.operator, &self.args, ", ")
+                        self.0.to_polar(),
+                        format_args(self.0, &self.1, ", ")
                     ),
                 },
                 // n-ary operators
-                And if self.args.is_empty() => "(true)".to_string(),
-                And => format_args(
-                    self.operator,
-                    &self.args,
-                    &format!(" {} ", self.operator.to_polar()),
-                ),
-                Or if self.args.is_empty() => "(false)".to_string(),
-                Or => format_args(
-                    self.operator,
-                    &self.args,
-                    &format!(" {} ", self.operator.to_polar()),
-                ),
+                And if self.1.is_empty() => "(true)".to_string(),
+                And => format_args(self.0, &self.1, &format!(" {} ", self.0.to_polar())),
+                Or if self.1.is_empty() => "(false)".to_string(),
+                Or => format_args(self.0, &self.1, &format!(" {} ", self.0.to_polar())),
             }
         }
     }
@@ -536,10 +514,7 @@ pub mod to_polar {
     impl ToPolarString for Rule {
         fn to_polar(&self) -> String {
             match &self.body.value() {
-                Value::Expression(Operation {
-                    operator: Operator::And,
-                    args,
-                }) => {
+                Value::Expression(Operation(Operator::And, args)) => {
                     if args.is_empty() {
                         format!(
                             "{}({});",

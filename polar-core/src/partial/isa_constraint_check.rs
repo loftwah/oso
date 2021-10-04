@@ -9,10 +9,9 @@ use std::collections::HashSet;
 
 fn path(x: &Term) -> Vec<Term> {
     match x.value() {
-        Value::Expression(Operation {
-            operator: Operator::Dot,
-            args,
-        }) => [vec![args[0].clone()], path(&args[1])].concat(),
+        Value::Expression(Operation(Operator::Dot, args)) => {
+            [vec![args[0].clone()], path(&args[1])].concat()
+        }
         _ => vec![x.clone()],
     }
 }
@@ -64,12 +63,12 @@ impl IsaConstraintCheck {
     fn check_constraint(&mut self, constraint: Operation, counter: &Counter) -> Check {
         // TODO(gj): check non-`Isa` constraints, e.g., `(Unify, partial, 1)` against `(Isa,
         // partial, Integer)`.
-        if constraint.operator != Operator::Isa {
+        if constraint.0 != Operator::Isa {
             return Check::None;
         }
 
-        let constraint_path = path(&constraint.args[0]);
-        let proposed_path = path(&self.proposed.args[0]);
+        let constraint_path = path(&constraint.1[0]);
+        let proposed_path = path(&self.proposed.1[0]);
 
         // Not comparable b/c one of the matches statements has a LHS that isn't a variable or dot
         // op.
@@ -79,12 +78,12 @@ impl IsaConstraintCheck {
 
         let just_vars = constraint_path.len() == 1
             && proposed_path.len() == 1
-            && matches!(&constraint.args[0].value().as_symbol(), Ok(Symbol(_)))
-            && matches!(&self.proposed.args[0].value().as_symbol(), Ok(Symbol(_)));
+            && matches!(&constraint.1[0].value().as_symbol(), Ok(Symbol(_)))
+            && matches!(&self.proposed.1[0].value().as_symbol(), Ok(Symbol(_)));
 
         // FIXME(gw): this logic is hard to follow!
         if just_vars {
-            let sym = constraint.args[0].value().as_symbol().unwrap();
+            let sym = constraint.1[0].value().as_symbol().unwrap();
             if !self.proposed_names.contains(sym) {
                 return Check::None;
             }
@@ -98,7 +97,7 @@ impl IsaConstraintCheck {
             return Check::None;
         }
 
-        let existing = constraint.args.last().unwrap();
+        let existing = constraint.1.last().unwrap();
 
         if constraint_path == proposed_path {
             // x matches A{} vs. x matches B{}
@@ -115,7 +114,7 @@ impl IsaConstraintCheck {
     }
 
     fn subclass_compare(&mut self, existing: &Term, counter: &Counter) -> Check {
-        let proposed = self.proposed.args.last().unwrap();
+        let proposed = self.proposed.1.last().unwrap();
         match (proposed.value(), existing.value()) {
             (
                 Value::Pattern(Pattern::Instance(proposed)),
@@ -150,7 +149,7 @@ impl IsaConstraintCheck {
     ) -> Check {
         // given `a.b matches B{}` and `a.b.c.d matches D{}`, we want to assemble an
         // `ExternalIsaWithPath` of `B`, [c, d], and `D`.
-        let proposed = self.proposed.args.last().unwrap();
+        let proposed = self.proposed.1.last().unwrap();
         match (proposed.value(), existing.value()) {
             (
                 Value::Pattern(Pattern::Instance(proposed)),

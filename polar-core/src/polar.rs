@@ -156,7 +156,7 @@ impl Polar {
     pub fn load(&self, sources: Vec<Source>) -> PolarResult<()> {
         if self.kb.read().unwrap().has_rules() {
             let msg = MULTIPLE_LOAD_ERROR_MSG.to_owned();
-            return Err(error::RuntimeError::FileLoading { msg }.into());
+            return Err(error::RuntimeError::FileLoading(msg).into());
         }
 
         // we extract this into a separate function
@@ -187,12 +187,7 @@ impl Polar {
                         let rule_type = rewrite_rule(rule_type, kb);
                         if !matches!(
                             rule_type.body.value(),
-                            Value::Expression(
-                                Operation {
-                                    operator: Operator::And,
-                                    args
-                                }
-                            ) if args.is_empty()
+                            Value::Expression(Operation(Operator::And, args)) if args.is_empty()
                         ) {
                             return Err(kb.set_error_context(
                                 &rule_type.body,
@@ -394,7 +389,7 @@ mod tests {
         // Loading twice is not.
         let msg = match polar.load(vec![source]).unwrap_err() {
             error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),
@@ -404,7 +399,7 @@ mod tests {
         // Even with load_str().
         let msg = match polar.load_str(src).unwrap_err() {
             error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),
@@ -422,7 +417,7 @@ mod tests {
 
         let msg = match polar.load(vec![source.clone(), source]).unwrap_err() {
             error::PolarError {
-                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading { msg }),
+                kind: error::ErrorKind::Runtime(error::RuntimeError::FileLoading(msg)),
                 ..
             } => msg,
             e => panic!("{}", e),

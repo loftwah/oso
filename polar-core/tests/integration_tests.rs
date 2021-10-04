@@ -119,7 +119,8 @@ where
                 class_tag,
             } => query
                 .question_result(call_id, external_isa_handler(instance, class_tag))
-                .map(|_|()).unwrap(),
+                .map(|_| ())
+                .unwrap(),
             QueryEvent::ExternalIsSubSpecializer {
                 call_id,
                 instance_id,
@@ -134,15 +135,21 @@ where
                         right_class_tag,
                     ),
                 )
-                    .map(|_|()).unwrap(),
-            QueryEvent::Debug(ref message) =>
-                query.debug_command(&debug_handler(message)).map(|_|()).unwrap(),
+                .map(|_| ())
+                .unwrap(),
+            QueryEvent::Debug(ref message) => query
+                .debug_command(&debug_handler(message))
+                .map(|_| ())
+                .unwrap(),
             QueryEvent::ExternalOp {
                 operator: Operator::Eq,
                 call_id,
                 args,
                 ..
-            } => query.question_result(call_id, args[0] == args[1]).map(|_|()).unwrap(),
+            } => query
+                .question_result(call_id, args[0] == args[1])
+                .map(|_| ())
+                .unwrap(),
             _ => {}
         }
     }
@@ -236,16 +243,9 @@ fn commute_ops(u: &Value, v: &Value) -> bool {
         (a[0].value(), a[1].value())
     }
     match (u.as_expression(), v.as_expression()) {
-        (
-            Ok(Operation {
-                operator: op_a,
-                args: arg_a,
-            }),
-            Ok(Operation {
-                operator: op_b,
-                args: arg_b,
-            }),
-        ) if op_a == op_b && arg_a.len() == arg_b.len() => {
+        (Ok(Operation(op_a, arg_a)), Ok(Operation(op_b, arg_b)))
+            if op_a == op_b && arg_a.len() == arg_b.len() =>
+        {
             let op = *op_a;
             if arg_a.len() == 2
                 && (op == Operator::Unify
@@ -2036,7 +2036,7 @@ fn test_assignment() {
     qeval(&mut p, "x := 5 and x == 5");
     qruntime!(
         "x := 5 and x := 6",
-        RuntimeError::TypeError { msg: s, .. },
+        RuntimeError::TypeError(s, _),
         s == "Can only assign to unbound variables, x is not unbound."
     );
     qnull(&mut p, "x := 5 and x > 6");
@@ -2263,7 +2263,7 @@ fn test_list_matches() {
 fn error_on_binding_expressions_and_patterns_to_variables() -> TestResult {
     qruntime!(
         "x matches y",
-        RuntimeError::TypeError { msg: m, .. },
+        RuntimeError::TypeError(m, _),
         m == "cannot unify patterns directly `x` = `y{}`"
     );
     Ok(())

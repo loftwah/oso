@@ -74,7 +74,6 @@ pub enum Token {
     Lt,        // <
     Gt,        // >
     Unify,     // =
-    Assign,    // :=
     Pipe,      // |
     SemiColon, // ;
     Query,     // ?=
@@ -124,7 +123,6 @@ impl ToString for Token {
             Token::Lt => "<".to_owned(),            // <
             Token::Gt => ">".to_owned(),            // >
             Token::Unify => "=".to_owned(),         // =
-            Token::Assign => ":=".to_owned(),       // :=
             Token::Pipe => "|".to_owned(),          // |
             Token::SemiColon => ";".to_owned(),     // ;
             Token::Query => "?=".to_owned(),        // ?=
@@ -454,7 +452,7 @@ impl<'input> Iterator for Lexer<'input> {
                 }
                 '"' => self.scan_string(i),
                 '0'..='9' => self.scan_number(i, char),
-                ':' => self.scan_1c_or_2c_op(i, Token::Colon, '=', Token::Assign),
+                ':' => self.scan_1c_op(i, Token::Colon),
                 '=' => self.scan_1c_or_2c_op(i, Token::Unify, '=', Token::Eq),
                 '<' => self.scan_1c_or_2c_op(i, Token::Lt, '=', Token::Leq),
                 '>' => self.scan_1c_or_2c_op(i, Token::Gt, '=', Token::Geq),

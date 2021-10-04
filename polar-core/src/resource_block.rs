@@ -227,11 +227,7 @@ impl Declaration {
         if let Declaration::Relation(relation) = self {
             Ok(relation)
         } else {
-            Err(RuntimeError::TypeError {
-                msg: format!("Expected Relation; got: {:?}", self),
-                stack_trace: None,
-            }
-            .into())
+            Err(RuntimeError::TypeError(format!("Expected Relation; got: {:?}", self), None).into())
         }
     }
 

@@ -13,7 +13,6 @@ use super::kb::KnowledgeBase;
 use super::vm::*;
 
 impl PolarVirtualMachine {
-
     /// this API doc is for the old version `Debug::maybe_break`
     /// in which `dbg` was `self` and `self` was `vm`
     ///
@@ -128,10 +127,7 @@ impl Debugger {
     pub fn break_msg(&self, vm: &PolarVirtualMachine) -> Option<String> {
         vm.trace.last().and_then(|trace| match trace.node {
             Node::Term(ref q) => match q.value() {
-                Value::Expression(Operation {
-                    operator: Operator::And,
-                    args,
-                }) if args.len() == 1 => None,
+                Value::Expression(Operation(Operator::And, args)) if args.len() == 1 => None,
                 _ => {
                     let source = self.query_source(q, &vm.kb.read().unwrap().sources, 3);
                     Some(format!("{}\n\n{}\n", vm.query_summary(q), source))
@@ -251,7 +247,7 @@ impl Debugger {
                             rule = Some(r.clone());
                         }
                         Node::Term(t) => {
-                            if matches!(t.value(), Value::Expression(Operation { operator: Operator::And, args}) if args.len() == 1)
+                            if matches!(t.value(), Value::Expression(Operation(Operator::And, args)) if args.len() == 1)
                             {
                                 continue;
                             }

@@ -141,10 +141,7 @@ impl VarInfo {
     fn symbolize(&mut self, val: &Term) -> Symbol {
         match val.value() {
             Value::Variable(var) | Value::RestVariable(var) => var.clone(),
-            Value::Expression(Operation {
-                operator: Operator::Dot,
-                args,
-            }) => self.dot_var(&args[0], &args[1]),
+            Value::Expression(Operation(Operator::Dot, args)) => self.dot_var(&args[0], &args[1]),
             _ => match self
                 .eq_values
                 .iter()
@@ -193,10 +190,9 @@ impl VarInfo {
     fn undot(&mut self, term: &Term) -> Value {
         let val = term.value();
         match val.as_expression() {
-            Ok(Operation {
-                operator: Operator::Dot,
-                args,
-            }) if args.len() == 2 => Value::from(self.dot_var(&args[0], &args[1])),
+            Ok(Operation(Operator::Dot, args)) if args.len() == 2 => {
+                Value::from(self.dot_var(&args[0], &args[1]))
+            }
             _ => val.clone(),
         }
     }
@@ -292,16 +288,14 @@ impl VarInfo {
 
     /// Process an expression in the context of this VarInfo. Just does side effects.
     fn process_exp(self, exp: &Operation) -> PolarResult<Self> {
-        let args = &exp.args;
-        match exp.operator {
+        let args = &exp.1;
+        match exp.0 {
             Operator::And => self.do_and(args),
             Operator::Dot if args.len() == 2 => self.do_dot(&args[0], &args[1]),
             Operator::Isa if args.len() == 2 => self.do_isa(&args[0], &args[1]),
             Operator::Neq if args.len() == 2 => self.do_neq(&args[0], &args[1]),
             Operator::In if args.len() == 2 => self.do_in(&args[0], &args[1]),
-            Operator::Unify | Operator::Eq | Operator::Assign if args.len() == 2 => {
-                self.do_unify(&args[0], &args[1])
-            }
+            Operator::Unify | Operator::Eq if args.len() == 2 => self.do_unify(&args[0], &args[1]),
 
             _ => err_unimplemented(format!(
                 "the expression `{}` is not supported for data filtering",
@@ -344,7 +338,7 @@ impl FilterPlan {
             .filter_map(|(i, result)| {
                 result.bindings.get(&Symbol::new(var)).map(|term| {
                     match term.value().as_expression() {
-                        Ok(exp) if exp.operator == Operator::And => {
+                        Ok(exp) if exp.0 == Operator::And => {
                             let vars = Vars::from_op(exp)?;
                             if explain {
                                 eprintln!("  {}: {}", i, term.to_polar());

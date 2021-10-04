@@ -50,7 +50,6 @@ extern {
         "<" => lexer::Token::Lt,            // <
         ">" => lexer::Token::Gt,            // >
         "=" => lexer::Token::Unify,         // =
-        ":=" => lexer::Token::Assign,       // :=
         "|" => lexer::Token::Pipe,          // |
         ";" => lexer::Token::SemiColon,     // ;
         "?=" => lexer::Token::Query,        // ?=
@@ -171,7 +170,7 @@ DotCall: Value = {
 New: Value = {
     "new" <call:Spanned<Call>> => {
         let args = vec![call];
-        let op = Operation{operator: Operator::New, args};
+        let op = Operation(Operator::New, args);
         Value::Expression(op)
     },
 };
@@ -239,16 +238,16 @@ BuiltinOperation: Value = {
             Some(arg) => args.push(arg),
             None => ()
         };
-        Value::Expression(Operation{operator: op, args: args})
+        Value::Expression(Operation(op, args))
     },
     "cut" => {
         let args = vec![];
-        let op = Operation{operator: Operator::Cut, args};
+        let op = Operation(Operator::Cut, args);
         Value::Expression(op)
     },
     "forall" "(" <arg1:LogExp> "," <arg2:LogExp> ")" => {
         let args = vec![arg1, arg2];
-        let op = Operation{operator: Operator::ForAll, args};
+        let op = Operation(Operator::ForAll, args);
         Value::Expression(op)
     },
 };
@@ -265,7 +264,7 @@ RewrittenOperation: Value = {
             Some(arg) => args.push(arg),
             None => ()
         };
-        Value::Expression(Operation{operator: op, args: args})
+        Value::Expression(Operation(op, args))
     },
 };
 
@@ -363,7 +362,7 @@ CallTerm: Value = {
 DotOp<T>: Value = {
     <head:ExpectValue<Exp9<T>>> "." <call_term:Spanned<CallTerm>> => {
         let args = vec![head, call_term];
-        let op = Operation{operator: Operator::Dot, args};
+        let op = Operation(Operator::Dot, args);
         Value::Expression(op)
     },
 }
@@ -378,7 +377,7 @@ Exp9<T>: ValueOrLogical = {
 InExp<T>: Value = {
     <left:ExpectValue<Exp8<T>>> "in" <right:ExpectValue<Exp9<T>>> => {
         let args = vec![left, right];
-        let op = Operation{operator: Operator::In, args};
+        let op = Operation(Operator::In, args);
         Value::Expression(op)
     },
 }
@@ -397,7 +396,7 @@ MatchExp<T>: Value = {
             right
         };
         let args = vec![left, right];
-        let op = Operation{operator: Operator::Isa, args};
+        let op = Operation(Operator::Isa, args);
         Value::Expression(op)
     },
 }
@@ -419,7 +418,7 @@ Op7: Operator = {
 MulExp<T>: Value = {
     <exp7:ExpectValue<Exp7<T>>> <operator:Op7> <exp8:ExpectValue<Exp8<T>>> => {
         let args = vec![exp7, exp8];
-        let op = Operation{operator, args};
+        let op = Operation(operator, args);
         Value::Expression(op)
     },
 }
@@ -436,7 +435,7 @@ Op6: Operator = {
 AddExp<T>: Value = {
     <exp6:ExpectValue<Exp6<T>>> <operator:Op6> <exp7:ExpectValue<Exp7<T>>> => {
         let args = vec![exp6, exp7];
-        let op = Operation{operator, args};
+        let op = Operation(operator, args);
         Value::Expression(op)
     },
 }
@@ -459,7 +458,7 @@ Op5: Operator = {
 CmpExp<T>: Value = {
     <exp5:ExpectValue<Exp5<T>>> <operator:Op5> <exp6:ExpectValue<Exp6<T>>> => {
         let args = vec![exp5, exp6];
-        let op = Operation{operator, args};
+        let op = Operation(operator, args);
         Value::Expression(op)
     },
 }
@@ -473,12 +472,7 @@ Exp5<T>: ValueOrLogical = {
 UnifyExp<T>: Value = {
     <exp4:ExpectValue<Exp4<T>>> "=" <exp5:ExpectValue<Exp5<T>>> => {
         let args = vec![exp4, exp5];
-        let op = Operation{operator: Operator::Unify, args};
-        Value::Expression(op)
-    },
-    <variable:Spanned<Variable>> ":=" <exp5:ExpectValue<Exp5<T>>> => {
-        let args = vec![variable, exp5];
-        let op = Operation{operator: Operator::Assign, args};
+        let op = Operation(Operator::Unify, args);
         Value::Expression(op)
     },
 }
@@ -495,7 +489,7 @@ Not = {"not"};
 NotExp<T>: Value = {
     Not <exp4:ExpectLogical<Exp4<T>>> => {
         let args = vec![exp4];
-        let op = Operation{operator: Operator::Not, args};
+        let op = Operation(Operator::Not, args);
         Value::Expression(op)
     },
 }
@@ -510,7 +504,7 @@ And = {"and"};
 AndExp<T>: Value = {
     <head:ExpectLogical<Exp3<T>>> And <mut tail:ExpectLogical<Exp2<T>>> => {
         let args = match &mut tail.value() {
-            Value::Expression(Operation{operator: Operator::And, args: tail_args}) => {
+            Value::Expression(Operation(Operator::And, tail_args)) => {
                 let mut args = vec![head];
                 args.append(&mut tail_args.clone());
                 args
@@ -519,7 +513,7 @@ AndExp<T>: Value = {
                 vec![head, tail]
             }
         };
-        let op = Operation{operator: Operator::And, args};
+        let op = Operation(Operator::And, args);
         Value::Expression(op)
     },
 }
@@ -534,7 +528,7 @@ Or = {"or"};
 OrExp<T>: Value = {
     <head:ExpectLogical<Exp2<T>>> Or <mut tail:ExpectLogical<Exp1<T>>> => {
         let args = match &mut tail.value() {
-            Value::Expression(Operation{operator: Operator::Or, args: tail_args}) => {
+            Value::Expression(Operation(Operator::Or, tail_args)) => {
                 let mut args = vec![head];
                 args.append(&mut tail_args.clone());
                 args
@@ -543,7 +537,7 @@ OrExp<T>: Value = {
                 vec![head, tail]
             }
         };
-        let op = Operation{operator: Operator::Or, args};
+        let op = Operation(Operator::Or, args);
         Value::Expression(op)
     },
 }
@@ -662,18 +656,18 @@ Define = {"if"};
 Rule: Rule = {
     <start_head:@L> <head:RuleHead> <start:@L> <end:@R> ";" => {
         let (name, params) = head;
-        let op = Operation{operator: Operator::And, args: vec![]};
+        let op = Operation(Operator::And, vec![]);
         let body = Term::new_from_parser(src_id, start, end, Value::Expression(op));
         Rule::new_from_parser(src_id, start_head, start, name, params, body)
     },
     <start_head:@L> <head:RuleHead> <end_head:@R> Define <body:TermExp> ";" => {
         let (name, params) = head;
         let body = match body.value() {
-            Value::Expression(Operation{operator: Operator::And, ..}) => {
+            Value::Expression(Operation(Operator::And, _)) => {
                 body
             },
             _ => {
-                let op = Operation{operator: Operator::And, args: vec![body.clone()]};
+                let op = Operation(Operator::And, vec![body.clone()]);
                 body.clone_with_value(Value::Expression(op))
             }
         };
@@ -684,7 +678,7 @@ Rule: Rule = {
 RuleType: Rule = {
     "type" <start_head:@L> <head:RuleHead> <start:@L> <end:@R> ";" => {
         let (name, params) = head;
-        let op = Operation{operator: Operator::And, args: vec![]};
+        let op = Operation(Operator::And, vec![]);
         let body = Term::new_from_parser(src_id, start, end, Value::Expression(op));
         Rule::new_from_parser(src_id, start_head, start, name, params, body)
     }

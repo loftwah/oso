@@ -101,16 +101,16 @@ impl JsString for Pattern {
 
 impl JsString for Operation {
     fn to_js(&self) -> String {
-        match self.operator {
-            Operator::Unify | Operator::Eq | Operator::Assign => {
-                format!("join({},{})", self.args[0].to_js(), self.args[1].to_js())
+        match self.0 {
+            Operator::Unify | Operator::Eq => {
+                format!("join({},{})", self.1[0].to_js(), self.1[1].to_js())
             }
-            Operator::Neq => format!("split({},{})", self.args[0].to_js(), self.args[1].to_js()),
-            Operator::And => self.args.iter().rev().fold("(x=>x)".to_owned(), |m, i| {
+            Operator::Neq => format!("split({},{})", self.1[0].to_js(), self.1[1].to_js()),
+            Operator::And => self.1.iter().rev().fold("(x=>x)".to_owned(), |m, i| {
                 format!("conj({},{})", i.to_js(), m)
             }),
             Operator::Or => self
-                .args
+                .1
                 .iter()
                 .rev()
                 .fold("(_=>undefined)".to_owned(), |m, i| {
@@ -118,18 +118,18 @@ impl JsString for Operation {
                 }),
             Operator::Not => format!(
                 "(s=>({})(Object.assign({{}},s))===undefined?s:undefined)",
-                self.args[0].to_js()
+                self.1[0].to_js()
             ),
             Operator::Dot => format!(
                 "(s=>join({},walk({})(s)[{}])(s))",
-                self.args[2].to_js(),
-                self.args[0].to_js(),
-                self.args[1].to_js()
+                self.1[2].to_js(),
+                self.1[0].to_js(),
+                self.1[1].to_js()
             ),
             Operator::Isa => format!(
                 "(s=>is(walk({})(s),{})?s:undefined)",
-                self.args[0].to_js(),
-                self.args[1].to_js()
+                self.1[0].to_js(),
+                self.1[1].to_js()
             ),
             _ => unimplemented!("don't know how to compile {:?}", self),
         }

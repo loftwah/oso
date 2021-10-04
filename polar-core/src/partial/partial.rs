@@ -10,7 +10,7 @@ pub const TRUE: Operation = op!(And);
 pub const FALSE: Operation = op!(Or);
 
 /// Invert operators.
-pub fn invert_operation(Operation { operator, args }: Operation) -> Operation {
+pub fn invert_operation(Operation(operator, args): Operation) -> Operation {
     fn invert_args(args: Vec<Term>) -> Vec<Term> {
         args.into_iter()
             .map(|t| {
@@ -22,45 +22,21 @@ pub fn invert_operation(Operation { operator, args }: Operation) -> Operation {
     }
 
     match operator {
-        Operator::And => Operation {
-            operator: Operator::Or,
-            args: invert_args(args),
-        },
-        Operator::Or => Operation {
-            operator: Operator::And,
-            args: invert_args(args),
-        },
-        Operator::Unify | Operator::Eq => Operation {
-            operator: Operator::Neq,
-            args,
-        },
-        Operator::Neq => Operation {
-            operator: Operator::Unify,
-            args,
-        },
-        Operator::Gt => Operation {
-            operator: Operator::Leq,
-            args,
-        },
-        Operator::Geq => Operation {
-            operator: Operator::Lt,
-            args,
-        },
-        Operator::Lt => Operation {
-            operator: Operator::Geq,
-            args,
-        },
-        Operator::Leq => Operation {
-            operator: Operator::Gt,
-            args,
-        },
+        Operator::And => Operation(Operator::Or, invert_args(args)),
+        Operator::Or => Operation(Operator::And, invert_args(args)),
+        Operator::Unify | Operator::Eq => Operation(Operator::Neq, args),
+        Operator::Neq => Operation(Operator::Unify, args),
+        Operator::Gt => Operation(Operator::Leq, args),
+        Operator::Geq => Operation(Operator::Lt, args),
+        Operator::Lt => Operation(Operator::Geq, args),
+        Operator::Leq => Operation(Operator::Gt, args),
         Operator::Debug | Operator::Print | Operator::New | Operator::Dot => {
-            Operation { operator, args }
+            Operation(operator, args)
         }
-        Operator::Isa => Operation {
-            operator: Operator::Not,
-            args: vec![term!(op!(Isa, args[0].clone(), args[1].clone()))],
-        },
+        Operator::Isa => Operation(
+            Operator::Not,
+            vec![term!(op!(Isa, args[0].clone(), args[1].clone()))],
+        ),
         Operator::Not => args[0]
             .value()
             .as_expression()
@@ -121,12 +97,12 @@ impl Operation {
             }
 
             fn fold_operation(&mut self, o: Operation) -> Operation {
-                match o.operator {
+                match o.0 {
                     Operator::Unify | Operator::Eq | Operator::Neq => {
-                        let neq = o.operator == Operator::Neq;
+                        let neq = o.0 == Operator::Neq;
 
-                        let l = self.fold_term(o.args[0].clone());
-                        let r = self.fold_term(o.args[1].clone());
+                        let l = self.fold_term(o.1[0].clone());
+                        let r = self.fold_term(o.1[1].clone());
                         if l.is_ground() && r.is_ground() {
                             let consistent = if neq { l != r } else { l == r };
                             if self.invert {
@@ -143,10 +119,7 @@ impl Operation {
                                 FALSE
                             }
                         } else {
-                            Operation {
-                                operator: o.operator,
-                                args: vec![l, r],
-                            }
+                            Operation(o.0, vec![l, r])
                         }
                     }
                     Operator::Not => {
@@ -157,15 +130,15 @@ impl Operation {
                     }
                     Operator::Gt | Operator::Geq | Operator::Lt | Operator::Leq => {
                         let o = if self.invert { invert_operation(o) } else { o };
-                        let left = self.fold_term(o.args[0].clone());
-                        let right = self.fold_term(o.args[1].clone());
+                        let left = self.fold_term(o.1[0].clone());
+                        let right = self.fold_term(o.1[1].clone());
                         match (left.value(), right.value()) {
                             (Value::Number(_), Value::Number(_))
                             | (Value::Number(_), Value::Boolean(_))
                             | (Value::Boolean(_), Value::Number(_))
                             | (Value::Boolean(_), Value::Boolean(_))
                             | (Value::String(_), Value::String(_)) => {
-                                if o.operator.cmp(left.value(), right.value()).unwrap() {
+                                if o.0.cmp(left.value(), right.value()).unwrap() {
                                     TRUE
                                 } else {
                                     self.consistent = false;
@@ -195,14 +168,14 @@ impl Operation {
     }
 
     fn constrain(&mut self, t: Term) {
-        if !self.args.iter().any(|p| *p == t) {
-            self.args.push(t);
+        if !self.1.iter().any(|p| *p == t) {
+            self.1.push(t);
         }
     }
     // TODO(gj): can we replace every use of this w/ clone_with_new_constraint for Immutability
     // Purposes?
     pub fn add_constraint(&mut self, o: Operation) {
-        assert_eq!(self.operator, Operator::And);
+        assert_eq!(self.0, Operator::And);
         self.constrain(o.into());
     }
 
@@ -210,9 +183,9 @@ impl Operation {
     ///
     /// Invariant: self and other are ANDs
     pub fn merge_constraints(mut self, other: Self) -> Self {
-        assert_eq!(self.operator, Operator::And);
-        assert_eq!(other.operator, Operator::And);
-        for t in other.args.into_iter() {
+        assert_eq!(self.0, Operator::And);
+        assert_eq!(other.0, Operator::And);
+        for t in other.1.into_iter() {
             self.constrain(t);
         }
         self
@@ -222,65 +195,49 @@ impl Operation {
     pub fn invert(&self) -> Operation {
         self.clone_with_constraints(vec![op!(
             Not,
-            term!(value!(Operation {
-                operator: Operator::And,
-                args: self
-                    .constraints()
+            term!(value!(Operation(
+                Operator::And,
+                self.constraints()
                     .iter()
                     .cloned()
                     .map(|o| term!(value!(o)))
                     .collect()
-            }))
+            )))
         )])
     }
 
     pub fn constraints(&self) -> Vec<Operation> {
-        self.args
+        self.1
             .iter()
             .map(|a| a.value().as_expression().unwrap().clone())
             .collect()
     }
 
     pub fn clone_with_constraints(&self, constraints: Vec<Operation>) -> Self {
-        assert_eq!(self.operator, Operator::And);
+        assert_eq!(self.0, Operator::And);
         let mut new = self.clone();
-        new.args = constraints.into_iter().map(|c| c.into()).collect();
+        new.1 = constraints.into_iter().map(|c| c.into()).collect();
         new
     }
 
     pub fn clone_with_new_constraint(&self, constraint: Term) -> Self {
-        assert_eq!(self.operator, Operator::And);
+        assert_eq!(self.0, Operator::And);
         let mut new = self.clone();
         match constraint.value() {
-            Value::Expression(e) if e.operator == Operator::And => new.args.extend(e.args.clone()),
-            _ => new.args.push(constraint),
+            Value::Expression(e) if e.0 == Operator::And => new.1.extend(e.1.clone()),
+            _ => new.1.push(constraint),
         }
         new
     }
 
     pub fn mirror(&self) -> Self {
-        let args = self.args.clone().into_iter().rev().collect();
-        match self.operator {
-            Operator::Unify | Operator::Eq | Operator::Neq => Self {
-                operator: self.operator,
-                args,
-            },
-            Operator::Gt => Self {
-                operator: Operator::Leq,
-                args,
-            },
-            Operator::Geq => Self {
-                operator: Operator::Lt,
-                args,
-            },
-            Operator::Lt => Self {
-                operator: Operator::Geq,
-                args,
-            },
-            Operator::Leq => Self {
-                operator: Operator::Gt,
-                args,
-            },
+        let args = self.1.clone().into_iter().rev().collect();
+        match self.0 {
+            Operator::Unify | Operator::Eq | Operator::Neq => Self(self.0, args),
+            Operator::Gt => Self(Operator::Leq, args),
+            Operator::Geq => Self(Operator::Lt, args),
+            Operator::Lt => Self(Operator::Geq, args),
+            Operator::Leq => Self(Operator::Gt, args),
             _ => self.clone(),
         }
     }
@@ -289,7 +246,7 @@ impl Operation {
 impl Iterator for Operation {
     type Item = Term;
     fn next(&mut self) -> Option<Term> {
-        self.args.pop()
+        self.1.pop()
     }
 }
 

@@ -207,14 +207,8 @@ pub fn fold_operator<T: Folder>(o: Operator, _fld: &mut T) -> Operator {
     o
 }
 
-pub fn fold_operation<T: Folder>(
-    Operation { operator, args }: Operation,
-    fld: &mut T,
-) -> Operation {
-    Operation {
-        operator: fld.fold_operator(operator),
-        args: fld.fold_list(args),
-    }
+pub fn fold_operation<T: Folder>(Operation(op, args): Operation, fld: &mut T) -> Operation {
+    Operation(fld.fold_operator(op), fld.fold_list(args))
 }
 
 pub fn fold_name<T: Folder>(n: Symbol, _fld: &mut T) -> Symbol {

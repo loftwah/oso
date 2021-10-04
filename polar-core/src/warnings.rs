@@ -172,14 +172,14 @@ impl<'kb> AndOrPrecendenceCheck<'kb> {
 
 impl<'kb> Visitor for AndOrPrecendenceCheck<'kb> {
     fn visit_operation(&mut self, o: &Operation) {
-        if (o.operator == Operator::And || o.operator == Operator::Or) && o.args.len() > 1 {
-            for term in o.args.iter().filter(|t| {
+        if (o.0 == Operator::And || o.0 == Operator::Or) && o.1.len() > 1 {
+            for term in o.1.iter().filter(|t| {
                 // find all inner expressions that are AND/OR terms where the outer
                 // term is OR/AND respectively
                 matches!(t.value(),
                     Value::Expression(op) if
-                        (op.operator == Operator::Or || op.operator == Operator::And)
-                        && op.operator != o.operator
+                        (op.0 == Operator::Or || op.0 == Operator::And)
+                        && op.0 != o.0
                 )
             }) {
                 let span = term.span().unwrap();
