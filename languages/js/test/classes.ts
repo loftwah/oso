@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
+
 export class A {
   a() {
     return 'A';
@@ -114,6 +116,13 @@ export class ConstructorMapObjectArgs {
   }
 }
 
+export class ConstructorAnyArg {
+  readonly opts;
+  constructor(opts: unknown) {
+    this.opts = opts;
+  }
+}
+
 let counter = 0;
 
 export class Counter {
@@ -193,7 +202,7 @@ export class X {
 }
 
 export class NonIterable {
-  constructor() {}
+  constructor() {} // eslint-disable-line @typescript-eslint/no-empty-function
 }
 
 export class BarIterator {

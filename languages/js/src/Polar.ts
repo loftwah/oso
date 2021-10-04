@@ -1,5 +1,8 @@
-const extname = require('path')?.extname;
-const createInterface = require('readline')?.createInterface;
+import { extname } from 'path';
+import { createInterface } from 'readline';
+import type { REPLServer } from 'repl';
+import { start } from 'repl';
+import { Context } from 'vm';
 
 import {
   InlineQueryFailedError,
@@ -12,6 +15,7 @@ import { Query } from './Query';
 import { Host, UserType } from './Host';
 import { Polar as FfiPolar } from './polar_wasm_api';
 import { Predicate } from './Predicate';
+import type { Message } from './messages';
 import { processMessage } from './messages';
 import type { Class, ClassParams, Options, QueryResult } from './types';
 import { isObj, isString, printError, PROMPT, readFile, repr } from './helpers';
@@ -90,7 +94,7 @@ export class Polar {
    * instances are spun up and not cleanly reaped by the GC, such as during a
    * long-running test process in 'watch' mode.
    */
-  free() {
+  free(): void {
     this.#ffiPolar.free();
   }
 
@@ -101,7 +105,7 @@ export class Polar {
    */
   private processMessages() {
     for (;;) {
-      const msg = this.#ffiPolar.nextMessage();
+      const msg = this.#ffiPolar.nextMessage() as Message | undefined;
       if (msg === undefined) break;
       processMessage(msg);
     }
@@ -111,7 +115,7 @@ export class Polar {
    * Clear rules from the Polar KB, but
    * retain all registered classes and constants.
    */
-  clearRules() {
+  clearRules(): void {
     this.#ffiPolar.clearRules();
     this.processMessages();
   }
@@ -196,7 +200,7 @@ export class Polar {
     if (isString(q)) {
       ffiQuery = this.#ffiPolar.newQueryFromStr(q);
     } else {
-      const term = JSON.stringify(host.toPolar(q));
+      const term = host.toPolar(q);
       ffiQuery = this.#ffiPolar.newQueryFromTerm(term);
     }
     this.processMessages();
@@ -253,7 +257,7 @@ export class Polar {
    */
   registerConstant(value: unknown, name: string): void {
     const term = this.getHost().toPolar(value);
-    this.#ffiPolar.registerConstant(name, JSON.stringify(term));
+    this.#ffiPolar.registerConstant(name, term);
   }
 
   getHost(): Host {
@@ -277,22 +281,24 @@ export class Polar {
 
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    const repl = global.repl?.repl;
+    const repl = global.repl?.repl as REPLServer | undefined; // eslint-disable-line @typescript-eslint/no-unsafe-member-access
 
     if (repl) {
       repl.setPrompt(PROMPT);
       const evalQuery = this.evalReplInput.bind(this);
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore
       repl.eval = async (
-        cmd: string,
-        _ctx: unknown,
+        evalCmd: string,
+        _ctx: Context,
         _file: string,
-        cb: Function
-      ) => cb(null, await evalQuery(cmd));
-      const listeners: Function[] = repl.listeners('exit');
+        cb: (err: Error | null, result: boolean | void) => void
+      ) => cb(null, await evalQuery(evalCmd));
+      const listeners = repl.listeners('exit') as (() => void)[];
       repl.removeAllListeners('exit');
       repl.prependOnceListener('exit', () => {
         listeners.forEach(l => repl.addListener('exit', l));
-        require('repl').start({ useGlobal: true });
+        start({ useGlobal: true });
       });
     } else {
       const rl = createInterface({
@@ -302,6 +308,7 @@ export class Polar {
         tabSize: 4,
       });
       rl.prompt();
+      // eslint-disable-next-line @typescript-eslint/no-misused-promises
       rl.on('line', async (line: string) => {
         const result = await this.evalReplInput(line);
         if (result !== undefined) console.log(result);

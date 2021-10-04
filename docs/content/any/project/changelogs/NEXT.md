@@ -8,16 +8,21 @@ description: >-
 draft: true
 ---
 
-## `oso` NEW_VERSION
 
-### Core
+## `RELEASED_PACKAGE_1` NEW_VERSION
+
+### Node.js
 
 #### Other bugs & improvements
 
-- Data filtering now supports the not-equals operator (`!=`)
+- Fixed a bug preventing dictionaries created in Polar from making the round-trip
+  to JS and back.
+
+  Many thanks to [`@rradczewski`](https://github.com/rradczewski) for
+  [raising](https://github.com/osohq/oso/issues/1242) and reproducing
+  the issue, and confirming the fix!
 
 
-## `RELEASED_PACKAGE_1` NEW_VERSION
 
 ### LANGUAGE (e.g., 'Core' or 'Python' or 'Node.js')
 

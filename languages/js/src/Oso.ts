@@ -5,7 +5,6 @@ import { Pattern } from './Pattern';
 import type {
   Options,
   CustomError,
-  obj,
   Class,
   PolarTerm,
   DataFilteringQueryParams,
@@ -289,27 +288,23 @@ export class Oso<
       resource
     );
 
-    const queryResults = [];
+    const queryResults: { bindings: Map<string, PolarTerm> }[] = [];
     for await (const result of results) {
-      queryResults.push(result);
+      queryResults.push({
+        // convert bindings back into Polar
+        bindings: new Map(
+          [...result.entries()].map(([k, v]) => [k, host.toPolar(v)])
+        ),
+      });
     }
 
-    const jsonResults = queryResults.map(result => ({
-      // `Map<string, unknown> -> {[key: string]: PolarTerm}` b/c Maps aren't
-      // trivially `JSON.stringify()`-able.
-      bindings: [...result.entries()].reduce((obj: obj<PolarTerm>, [k, v]) => {
-        obj[k] = host.toPolar(v);
-        return obj;
-      }, {}),
-    }));
-    const resultsStr = JSON.stringify(jsonResults);
     const plan = this.getFfi().buildFilterPlan(
       host.serializeTypes(),
-      resultsStr,
+      queryResults,
       'resource',
       clsName
-    );
-    return filterData(host, plan as FilterPlan);
+    ) as FilterPlan;
+    return filterData(host, plan);
   }
 
   /**
@@ -331,7 +326,7 @@ export class Oso<
     const userType = this.getHost().getType(resourceCls);
     if (userType === undefined)
       throw new UnregisteredClassError(resourceCls.name);
-    return userType.execQuery(query);
+    return (await userType.execQuery(query)) as T[];
   }
 
   /**
@@ -339,7 +334,7 @@ export class Oso<
    * These can be overridden by passing specific implementations to
    * `registerClass`.
    */
-  setDataFilteringQueryDefaults(options: DataFilteringQueryParams) {
+  setDataFilteringQueryDefaults(options: DataFilteringQueryParams): void {
     if (options.buildQuery) this.getHost().buildQuery = options.buildQuery;
     if (options.execQuery) this.getHost().execQuery = options.execQuery;
     if (options.combineQuery)

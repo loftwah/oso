@@ -7,7 +7,7 @@ JS_DIR := $(OSO_ROOT)/languages/js
 RUBY_DIR := $(OSO_ROOT)/languages/ruby
 
 # Needed for tests
-JAVA_PACKAGE_JAR_PATH := $(JAVA_DIR)/oso/target/oso-0.20.1.jar
+JAVA_PACKAGE_JAR_PATH := $(JAVA_DIR)/oso/target/oso-0.21.0.jar
 
 # Note: if you are using bundler in a sub-makefile (in a docs test for example),
 # you need to add `unexport BUNDLE_GEMFILE` to that makefile. Otherwise this
@@ -22,7 +22,6 @@ submodules: .make.submodules.installed
 
 update-submodules:
 	git submodule update --checkout --init --recursive --remote
-	cd roles/sqlalchemy/basic && git checkout basic_roles_complete && git pull
 
 .PHONY: submodules update-submodules java-test java-test-context java-test-rbac  python-test ruby-test nodejs-test test-quickstarts-release test-quickstarts-local test
 
@@ -46,7 +45,6 @@ python-test:
 	cd inheritance/python && pytest .
 	cd context/python && pytest .
 	cd user_types/python && pytest .
-	cd roles/sqlalchemy/basic && pip install -r requirements.txt && pytest .
 	$(MAKE) -C data_access/django test
 	$(MAKE) -C data_access/sqlalchemy test
 
