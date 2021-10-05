@@ -3,6 +3,11 @@ package com.osohq.oso;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.stream.Collectors;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 public class Oso extends Polar {
   private Object readAction = "read";
@@ -116,6 +121,39 @@ public class Oso extends Polar {
   public void authorize(Object actor, Object action, Object resource)
       throws Exceptions.OsoException {
     authorize(actor, action, resource, true);
+  }
+
+  public <T> List<T> authorizedResources(Object actor, Object action, Class<T> cls) {
+    Object query = authorizedQuery(actor, action, cls);
+    if (query == null) return List.of();
+    Host.UserType type = host.types.get(cls);
+    List<T> result = (List<T>) type.execQuery.apply(query);
+    return result == null ? List.of() : result;
+  }
+
+  public Object authorizedQuery(Object actor, Object action, Class<?> cls) {
+    Variable resource = new Variable("resource");
+    List<Object> args =
+        List.of(resource, new Pattern(host.types.get(cls).name, new HashMap<String, Object>()));
+    args = List.of(new Expression(Operator.Isa, args));
+    Expression typeConstraint = new Expression(Operator.And, args);
+    Map<String, Object> bindings = Map.of("resource", typeConstraint);
+    Query q = queryRuleX("allow", bindings, true, actor, action, resource);
+    JSONArray out = new JSONArray();
+
+    for (HashMap<String, Object> res; (res = q.nextElement()) != null; ) {
+      for (String key : res.keySet()) {
+        JSONObject outer = new JSONObject(), inner = new JSONObject();
+        inner.put(key, host.toPolarTerm(res.get(key)));
+        outer.put("bindings", inner);
+        out.put(outer);
+      }
+    }
+
+    return ffiPolar
+        .buildFilterPlan(
+            this.host, host.serializeTypes(), out.toString(), "resource", host.types.get(cls).name)
+        .buildQuery();
   }
 
   /**

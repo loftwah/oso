@@ -21,7 +21,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class Polar {
-  private Ffi.Polar ffiPolar;
+  protected Ffi.Polar ffiPolar;
   protected Host host; // visible for tests only
 
   public Polar() throws Exceptions.OsoException {
@@ -102,11 +102,13 @@ public class Polar {
    */
   @Deprecated
   public void loadFile(String filename) throws IOException, OsoException {
+    /*
     System.err.println(
         "`Oso.loadFile` has been deprecated in favor of `Oso.loadFiles` as of the 0.20"
             + " release.\n\n"
             + "Please see changelog for migration instructions:"
             + " https://docs.osohq.com/project/changelogs/2021-09-15.html");
+            */
     loadFiles(new String[] {filename});
   }
 
@@ -223,7 +225,7 @@ public class Polar {
     return queryRuleX(rule, bindings, false, args);
   }
 
-  private Query queryRuleX(
+  protected Query queryRuleX(
       String rule, Map<String, Object> bindings, boolean acceptExpression, Object... args)
       throws Exceptions.OsoException {
     Host new_host = host.clone();
@@ -298,38 +300,6 @@ public class Polar {
 
   public static void main(String[] args) throws Exceptions.OsoException, IOException {
     new Polar().repl(args);
-  }
-
-  public List<Object> authorizedResources(Object actor, String action, Class<?> cls) {
-    Object query = authorizedQuery(actor, action, cls);
-    if (query == null) return List.of();
-    Host.UserType type = host.types.get(cls);
-    return type.execQuery.apply(query);
-  }
-
-  public Object authorizedQuery(Object actor, String action, Class<?> cls) {
-    Variable resource = new Variable("resource");
-    List<Object> args =
-        List.of(resource, new Pattern(host.types.get(cls).name, new HashMap<String, Object>()));
-    args = List.of(new Expression(Operator.Isa, args));
-    Expression typeConstraint = new Expression(Operator.And, args);
-    Map<String, Object> bindings = Map.of("resource", typeConstraint);
-    Query q = queryRuleX("allow", bindings, true, actor, action, resource);
-    JSONArray out = new JSONArray();
-
-    for (HashMap<String, Object> res; (res = q.nextElement()) != null; ) {
-      for (String key : res.keySet()) {
-        JSONObject outer = new JSONObject(), inner = new JSONObject();
-        inner.put(key, host.toPolarTerm(res.get(key)));
-        outer.put("bindings", inner);
-        out.put(outer);
-      }
-    }
-
-    return ffiPolar
-        .buildFilterPlan(
-            this.host, host.serializeTypes(), out.toString(), "resource", host.types.get(cls).name)
-        .buildQuery();
   }
 
   /** Register a Java class with Polar. */

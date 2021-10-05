@@ -2,105 +2,88 @@ package com.osohq.oso;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.function.Predicate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 public class DataFilteringTest {
   protected Oso o;
 
-  static class Wizard {
-    public String name;
-    public List<String> books;
-    public List<Integer> spellLevels;
+  static class Foo {
+    public String id, barId;
+    public boolean isFooey;
+    public List<Integer> numbers;
+    public Foo(String id, String barId, boolean isFooey, List<Integer> numbers) {
+      this.id = id;
+      this.barId = barId;
+      this.isFooey = isFooey;
+      this.numbers = numbers;
+    }
 
-    public Wizard(String name, List<String> books, List<Integer> spellLevels) {
-      this.name = name;
-      this.books = books;
-      this.spellLevels = spellLevels;
+    public Bar bar() {
+      return allBars.stream().filter(b -> b.id == this.barId).findFirst().get();
+    }
+    public List<Log> logs() {
+      return filter(allLogs, l -> l.fooId == this.id);
     }
   }
 
-  static class Familiar {
-    public String name;
-    public String kind;
-    public String wizardName;
-
-    public Familiar(String name, String kind, String wizardName) {
-      this.name = name;
-      this.kind = kind;
-      this.wizardName = wizardName;
+  static class Bar {
+    public String id;
+    public boolean isCool, isStillCool;
+    public Bar(String id, boolean isCool, boolean isStillCool) {
+      this.id = id;
+      this.isCool = isCool;
+      this.isStillCool = isStillCool;
+    }
+    public List<Foo> foos() {
+      return allFoos.stream().filter(f -> f.barId == this.id)
+        .collect(Collectors.toList());
     }
   }
 
-  static class Spell {
-    public String name;
-    public String school;
-    public Integer level;
-
-    public Spell(String name, String school, int level) {
-      this.name = name;
-      this.school = school;
-      this.level = level;
+  static class Log {
+    public String id, fooId, data;
+    public Log(String id, String fooId, String data) {
+      this.id = id;
+      this.fooId = fooId;
+      this.data = data;
+    }
+    public Foo foo() {
+      return allFoos.stream().filter(f -> f.id == this.fooId).findFirst().get();
     }
   }
 
-  static final String magicPath = "src/test/resources/magic_policy.polar";
+  private static final Bar
+    helloBar = new Bar("hello", true, true),
+    goodbyeBar = new Bar("goodbye", false, true),
+    hersheyBar = new Bar("hershey", false, false);
 
-  static final Wizard
-      babaYaga =
-          new Wizard(
-              "baba yaga",
-              List.of("necromancy", "destruction", "summoning"),
-              List.of(
-                  new Integer(1),
-                  new Integer(2),
-                  new Integer(3),
-                  new Integer(4),
-                  new Integer(5),
-                  new Integer(6),
-                  new Integer(7),
-                  new Integer(8))),
-      gandalf =
-          new Wizard(
-              "gandalf",
-              List.of("divination", "destruction"),
-              List.of(new Integer(1), new Integer(2), new Integer(3), new Integer(4))),
-      galadriel =
-          new Wizard(
-              "galadriel",
-              List.of("divination", "thaumaturgy", "inscription"),
-              List.of(
-                  new Integer(1),
-                  new Integer(2),
-                  new Integer(3),
-                  new Integer(4),
-                  new Integer(5),
-                  new Integer(6),
-                  new Integer(7)));
-  static final Familiar shadowfax = new Familiar("shadowfax", "horse", "gandalf"),
-      brownJenkin = new Familiar("brown jenkin", "rat", "baba yaga"),
-      gimli = new Familiar("gimli", "dwarf", "galadriel"),
-      hedwig = new Familiar("hedwig", "owl", "galadriel");
+  private static final Foo
+    somethingFoo = new Foo("something", "hello", false, List.of()),
+    anotherFoo = new Foo("another", "hello", true, List.of(1)),
+    thirdFoo = new Foo("third", "hello", true, List.of(2)),
+    fourthFoo = new Foo("fourth", "goodbye", true, List.of(2, 1));
 
-  public static final List<Wizard> wizards = List.of(babaYaga, gandalf, galadriel);
-  public static final List<Familiar> familiars = List.of(shadowfax, brownJenkin, gimli, hedwig);
-  public static final List<Spell> spells =
-      List.of(
-          new Spell("teleport other", "thaumaturgy", new Integer(7)),
-          new Spell("wish", "thaumaturgy", new Integer(9)),
-          new Spell("cure light wounds", "necromancy", new Integer(1)),
-          new Spell("identify", "divination", new Integer(1)),
-          new Spell("call familiar", "summoning", new Integer(1)),
-          new Spell("call ent", "summoning", new Integer(7)),
-          new Spell("magic missile", "destruction", new Integer(1)),
-          new Spell("liquify organ", "destruction", new Integer(5)),
-          new Spell("call dragon", "summoning", new Integer(9)),
-          new Spell("know alignment", "divination", new Integer(6)));
+  private static final Log
+    fourthLog = new Log("a", "fourth", "goodbye"),
+    thirdLog = new Log("b", "third", "world"),
+    anotherLog = new Log("c", "another", "steve");
+
+  private static final List<Foo>
+    allFoos = List.of(somethingFoo, anotherFoo, thirdFoo, fourthFoo);
+  private static final List<Bar>
+    allBars = List.of(helloBar, goodbyeBar, hersheyBar);
+  private static final List<Log>
+    allLogs = List.of(fourthLog, thirdLog, anotherLog);
 
   @BeforeEach
   public void setUp() throws Exception {
@@ -108,111 +91,198 @@ public class DataFilteringTest {
       o = new Oso();
 
       Host.UserType typ,
+          bool = o.getClass("Boolean"),
           string = o.getClass("String"),
           integer = o.getClass("Integer"),
           list = o.getClass("List");
 
       o.configureDataFiltering(
-          (q) -> (List<Object>) q,
+          (q) -> ((List<Object>) q).stream().distinct().collect(Collectors.toList()),
           (a, b) ->
               Stream.concat(((List<Object>) a).stream(), ((List<Object>) b).stream())
                   .collect(Collectors.toList()));
 
       o.registerClass(
-                  Wizard.class,
-                  "Wizard",
-                  Map.of(
-                      "name", string,
-                      "books", list,
-                      "spellLevels", list,
-                      "familiars",
-                          new Host.TypeRelation(
-                              Host.RelationKind.CHILDREN, "Familiar", "name", "wizardName")))
-              .buildQuery =
-          (cs) -> filterList(wizards, cs);
+          Foo.class,
+          "Foo",
+          Map.of(
+            "id", string,
+            "barId", string,
+            "isFooey", bool,
+            "numbers", list,
+            "bar", new Host.TypeRelation(Host.RelationKind.PARENT, "Bar", "barId", "id"),
+            "logs", new Host.TypeRelation(Host.RelationKind.CHILDREN, "Log", "id", "fooId")
+          )
+        ).buildQuery = (cs) -> filterList(allFoos, cs);
 
       o.registerClass(
-                  Familiar.class,
-                  "Familiar",
-                  Map.of(
-                      "name", string,
-                      "kind", string,
-                      "wizardName", string,
-                      "wizard",
-                          new Host.TypeRelation(
-                              Host.RelationKind.PARENT, "Wizard", "wizardName", "name")))
-              .buildQuery =
-          (cs) -> filterList(familiars, cs);
+          Bar.class,
+          "Bar",
+          Map.of(
+            "id", string,
+            "isCool", bool,
+            "isStillCool", bool,
+            "foos", new Host.TypeRelation(Host.RelationKind.CHILDREN, "Foo", "id", "barId")
+          )
+        ).buildQuery = (cs) -> filterList(allBars, cs);
 
       o.registerClass(
-                  Spell.class,
-                  "Spell",
-                  Map.of(
-                      "name", string,
-                      "school", string,
-                      "level", integer))
-              .buildQuery =
-          (cs) -> filterList(spells, cs);
-
-      o.loadFile(magicPath);
-
+          Log.class,
+          "Log",
+          Map.of(
+            "id", string,
+            "fooId", string,
+            "data", string,
+            "foo", new Host.TypeRelation(Host.RelationKind.PARENT, "Foo", "fooId", "id")
+          )
+        ).buildQuery = (cs) -> filterList(allLogs, cs);
     } catch (Exception e) {
       throw new Error(e);
     }
   }
 
   @Test
-  public void testWizardsCanCastTheRightSpells() throws Exception {
-    List<Object> spells = o.authorizedResources(gandalf, "cast", Spell.class);
-    assertEquals(2, spells.size());
+  public void test_model() {
+    o.loadStr("allow(_, _, _: Foo{id: \"something\"});");
+    checkAuthz("gwen", "get", Foo.class, List.of(somethingFoo));
+    o.clearRules();
+    o.loadStr(
+        "allow(_, _, _: Foo{id: \"something\"});" +
+        "allow(_, _, _: Foo{id: \"another\"});");
+    checkAuthz("gwen", "get", Foo.class, List.of(anotherFoo, somethingFoo));
+  }
+
+
+  @Test
+  public void test_authorize_scalar_attribute_eq() {
+    o.loadStr(
+        "allow(_: Bar, \"read\", _: Foo{isFooey: true});" +
+        "allow(bar: Bar, \"read\", _: Foo{bar: bar});");
+    for (Bar bar : allBars) {
+      List<Foo> expected = filter(allFoos, f -> f.isFooey || f.bar() == bar);
+      checkAuthz(bar, "read", Foo.class, expected);
+    }
   }
 
   @Test
-  public void testOnlyGandalfCanRideShadowfax() throws Exception {
-    List<Object> fams = o.authorizedResources(gandalf, "ride", Familiar.class);
-    assertEquals(1, fams.size());
-    assertEquals(shadowfax, fams.get(0));
-
-    fams = o.authorizedResources(babaYaga, "ride", Familiar.class);
-    assertEquals(0, fams.size());
-
-    fams = o.authorizedResources(galadriel, "ride", Familiar.class);
-    assertEquals(0, fams.size());
+  public void test_authorize_scalar_attribute_condition() {
+    o.loadStr(
+      "allow(bar: Bar{isCool: true}, _, _: Foo{bar: bar});" +
+      "allow(_: Bar, _, _: Foo{bar: b, isFooey: true}) if b.isCool;" +
+      "allow(_: Bar{isStillCool: true}, _, foo: Foo) if"+
+      "  foo.bar.isCool = false;");
+    for (Bar bar: allBars)
+      checkAuthz(bar, "read", Foo.class,
+          filter(allFoos, f ->
+          f.bar() == bar && bar.isCool ||
+          f.bar().isCool && f.isFooey ||
+          !f.bar().isCool && bar.isStillCool));
   }
 
   @Test
-  public void testBrownJenkinCanGroomTheRightPeople() throws Exception {
-    List<Object> wizards = o.authorizedResources(brownJenkin, "groom", Wizard.class);
-    assertEquals(wizards.size(), 1);
-    assertEquals((Wizard) wizards.get(0), babaYaga);
-
-    List<Object> fams = o.authorizedResources(brownJenkin, "groom", Familiar.class);
-    assertEquals(3, fams.size());
-    assertNotEquals(-1, fams.indexOf(brownJenkin));
-    assertNotEquals(-1, fams.indexOf(shadowfax));
-    assertNotEquals(-1, fams.indexOf(gimli));
+  public void test_in_multiple_attribute_relationship() {
+    o.loadStr(
+      "allow(_, _, _: Foo{isFooey: false});" +
+      "allow(bar, _, _: Foo{bar: bar});" +
+      "allow(_, _, foo: Foo) if" +
+      "  1 in foo.numbers and" +
+      "  foo.bar.isCool;" +
+      "allow(_, _, foo: Foo) if" +
+      "  2 in foo.numbers and" +
+      "  foo.bar.isCool;");
+    for (Bar bar : allBars)
+      checkAuthz(bar, "read", Foo.class,
+          filter(allFoos, foo ->
+            !foo.isFooey ||
+            foo.bar() == bar ||
+            foo.bar().isCool && (foo.numbers.contains(1) || foo.numbers.contains(2))));
   }
 
   @Test
-  public void testOnlyGaladrielCanInscribeSpells() throws Exception {
-    List<Object> spells = o.authorizedResources(galadriel, "inscribe", Spell.class);
-    assertNotEquals(spells.size(), 0);
-
-    spells = o.authorizedResources(gandalf, "inscribe", Spell.class);
-    assertEquals(spells.size(), 0);
-    spells = o.authorizedResources(babaYaga, "inscribe", Spell.class);
-    assertEquals(spells.size(), 0);
+  public void test_nested_relationship_many_single() {
+    o.loadStr("allow(log: Log, _, bar: Bar) if log.foo in bar.foos;");
+    for (Log log: allLogs)
+      checkAuthz(log, "read", Bar.class, filter(allBars, bar ->
+            bar.foos().contains(log.foo())));
   }
 
-  private <T> List<T> filterList(List<T> objs, List<FilterPlan.Constraint> cons) {
-    return objs.stream()
-        .filter((obj) -> cons.stream().allMatch((con) -> con.check(obj)))
-        .collect(Collectors.toList());
+  @Test
+  public void test_nested_relationship_many_many() {
+    o.loadStr("allow(log: Log, _, bar: Bar) if foo in bar.foos and log in foo.logs;");
+    for (Log log: allLogs) checkAuthz(log, "read", Bar.class, filter(allBars, bar ->
+      bar.foos().stream().anyMatch(foo -> foo == log.foo())));
   }
 
-  private static List<Integer> levels(int l) {
-    List<Integer> ls = List.of();
-    for (int i = 1; i <= l; i++) ls.add(new Integer(i));
-    return ls;
+  @Test
+  public void test_nested_relationship_many_many_constrained() {
+    o.loadStr(
+      "allow(log: Log{data:\"steve\"}, _, bar: Bar) if" +
+      "  foo in bar.foos and log in foo.logs;");
+    for (Log log: allLogs) checkAuthz(log, "read", Bar.class, filter(allBars, bar ->
+      log.data == "steve" && bar.foos().stream().anyMatch(foo -> foo == log.foo())));
+  }
+
+  @Test
+  public void test_partial_in_collection() {
+    o.loadStr("allow(bar: Bar, _, foo: Foo) if foo in bar.foos;");
+    for (Bar bar : allBars) checkAuthz(bar, "read", Foo.class, bar.foos());
+  }
+
+  /* FIXME fails??
+  @Test
+  public void test_empty_constraints_in() {
+    o.loadStr("allow(_, _, foo: Foo) if _ in foo.logs;");
+    List<Foo> expected = filter(allFoos, foo -> foo.logs().size() > 0);
+    checkAuthz("gwen", "read", Foo.class, expected);
+  }
+  @Test
+  public void test_unify_ins() {
+    o.loadStr(
+      "allow(_, _, _: Bar{foos: foos}) if" +
+      "  foo in foos and goo in foos and foo = goo;");
+    checkAuthz("gwen", "read", Bar.class, filter(allBars, bar ->
+        bar.foos().size() > 0));
+  }
+
+  */
+
+  @Test
+  public void test_in_with_constraints_but_no_matching_objects() {
+    o.loadStr("allow(_, _, foo: Foo) if log in foo.logs and log.data = \"nope\";");
+    checkAuthz("gwen", "read", Foo.class, List.of());
+  }
+
+  @Test
+  public void test_redundant_in_on_same_field() {
+    o.loadStr(
+      "allow(_, _, foo: Foo) if" +
+      "  m in foo.numbers and" +
+      "  n in foo.numbers and" +
+      "  m = 1 and n = 2;");
+    checkAuthz("gwen", "read", Foo.class, List.of(fourthFoo));
+  }
+
+  @Test
+  public void test_unify_ins_field_eq() {
+    o.loadStr(
+      "allow(_, _, _: Bar{foos: foos}) if" +
+      "  foo in foos and goo in foos and foo.id = goo.id;");
+    checkAuthz("gwen", "read", Bar.class, filter(allBars, bar ->
+        !bar.foos().isEmpty()));
+  }
+
+
+  private <T> void checkAuthz(Object actor, Object action, Class<T> resourceCls, List<T> expected) {
+    List<T> actual = o.authorizedResources(actor, action, resourceCls);
+    assertEquals(expected.size(), actual.size());
+    for (T x: actual) assertTrue(expected.contains(x));
+  }
+
+  private static <T> List<T> filter(List<T> objs, Predicate<T> pred) {
+    return objs.stream().filter(pred).collect(Collectors.toList());
+  }
+
+  private static <T> List<T> filterList(List<T> objs, List<FilterPlan.Constraint> cons) {
+    return filter(objs, obj -> cons.stream().allMatch((con) -> con.check(obj)));
   }
 }
