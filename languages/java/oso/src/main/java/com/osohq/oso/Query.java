@@ -101,7 +101,7 @@ public class Query implements Enumeration<HashMap<String, Object>> {
             this.host,
             FilterPlan.ConstraintKind.EQ,
             rel.otherField,
-            new FilterPlan.Constraint.Term(instance));
+            new FilterPlan.Term(instance));
 
     String out;
     List<Object> res = typ.execQuery.apply(typ.buildQuery.apply(List.of(constraint)));

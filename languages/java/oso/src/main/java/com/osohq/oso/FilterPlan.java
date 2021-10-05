@@ -4,9 +4,12 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
 import java.util.function.BiFunction;
+import java.util.function.Predicate;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.stream.Collectors;
 
 public class FilterPlan {
   public String className;
@@ -20,6 +23,46 @@ public class FilterPlan {
     this.resultSets = new ResultSet[sets.length()];
     for (int i = 0, j = sets.length(); i < j; i++)
       this.resultSets[i] = new ResultSet(host, sets.getJSONObject(i));
+  }
+
+  private static class Partition<T> {
+    public List<T> yes, no;
+    public Partition(List<T> coll, Predicate<T> pred) {
+      yes = new ArrayList();
+      no = new ArrayList();
+      for (T t: coll) (pred.test(t) ? yes : no).add(t);
+    }
+  }
+
+  private <T, U> Map<U, List<T>> groupBy(List<T> coll, Function<T, U> fun) {
+    HashMap<U, List<T>> out = new HashMap();
+    for (T it: coll) {
+      U res = fun.apply(it);
+      List<T> l = out.get(res);
+      if (l == null) {
+        l = new ArrayList();
+        out.put(res, l);
+      }
+      l.add(it);
+    }
+    return out;
+  }
+
+  private List<Constraint> groundFilters(HashMap<Integer, List<Object>> setResults, List<Constraint> fils) {
+    Partition<Constraint>
+      p1 = new Partition(fils, fil -> ((Constraint)fil).value.getClass() == Ref.class),
+      p2 = new Partition(p1.yes, fil -> ((Constraint)fil).kind == ConstraintKind.IN || ((Constraint)fil).kind == ConstraintKind.EQ);
+    List<Constraint> rest = p1.no, yrefs = p2.yes, nrefs = p2.no;
+    for (List<Constraint> refs: yrefs)
+      for (Map.Entry<Integer, List<Constraint>> ent: groupBy(refs, fil -> ((Ref)((Constraint)fil).value).resultId).entrySet()) {
+        List<Constraint> fs = ent.getValue();
+        List<Object> value = new Term(setResults.get(ent.getKey()).stream().map(r ->
+            fs.stream().map(f ->
+              r.getClass().getField(((Ref)((Constraint)f).value).field).get(r))
+            .collect(Collectors.toList())).collect(Collectors.toList()));
+        rest.add(new Constraint(host, ConstraintKind.IN, fs.stream().map(f -> f.field).collect(Collectors.toList()), value));
+      }
+    return rest;
   }
 
   public Object buildQuery() {
@@ -182,33 +225,33 @@ public class FilterPlan {
       if (key.equals("Field")) return new Field(value);
       throw new Exceptions.DataFilteringError("Invalid constraint value type: " + key);
     }
+  }
 
-    abstract static class ConstraintValue {}
+  abstract static class ConstraintValue {}
 
-    static class Ref extends ConstraintValue {
-      public int resultId;
-      public String field;
+  static class Ref extends ConstraintValue {
+    public int resultId;
+    public String field;
 
-      public Ref(JSONObject json) {
-        this.resultId = json.getInt("result_id");
-        this.field = json.isNull("field") ? null : json.getString("field");
-      }
+    public Ref(JSONObject json) {
+      this.resultId = json.getInt("result_id");
+      this.field = json.isNull("field") ? null : json.getString("field");
     }
+  }
 
-    static class Field extends ConstraintValue {
-      public String field;
+  static class Field extends ConstraintValue {
+    public String field;
 
-      public Field(JSONObject json) {
-        this.field = json.getString("Field");
-      }
+    public Field(JSONObject json) {
+      this.field = json.getString("Field");
     }
+  }
 
-    static class Term extends ConstraintValue {
-      public Object value;
+  static class Term extends ConstraintValue {
+    public Object value;
 
-      public Term(Object value) {
-        this.value = value;
-      }
+    public Term(Object value) {
+      this.value = value;
     }
   }
 }
