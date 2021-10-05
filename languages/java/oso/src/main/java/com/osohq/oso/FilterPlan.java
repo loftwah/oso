@@ -33,7 +33,8 @@ public class FilterPlan {
         Host.UserType type = this.host.types.get(req.className);
         Object query = type.buildQuery.apply(req.constraints);
         if (i != rs.resultId) {
-          setResults.put(new Integer(i), type.execQuery.apply(query));
+          List<Object> result_set = type.execQuery.apply(query);
+          setResults.put(new Integer(i), result_set);
         } else {
           combine = type.combineQuery;
           queries.add(query);
@@ -110,7 +111,7 @@ public class FilterPlan {
     public void ground(Map<Integer, List<Object>> setResults) throws Exceptions.DataFilteringError {
       if (this.value instanceof Ref) {
         Ref ref = (Ref) this.value;
-        List<Object> val = setResults.get(new Integer(ref.resultId));
+        List<Object> val = new ArrayList(setResults.get(new Integer(ref.resultId)));
         if (ref.field != null)
           for (int i = 0, j = val.size(); i < j; i++)
             try {
@@ -120,8 +121,8 @@ public class FilterPlan {
               throw new Exceptions.DataFilteringError(
                   "Couldn't read field "
                       + ref.field
-                      + " of result set "
-                      + String.valueOf(ref.resultId));
+                      + " of "
+                      + String.valueOf(val.get(i)));
             }
         this.value = new Term(val);
       }
@@ -172,9 +173,8 @@ public class FilterPlan {
     private ConstraintValue parseConstraintValue(Host host, JSONObject value)
         throws Exceptions.OsoException {
       String key = value.keys().next();
-      value = value.getJSONObject(key);
-      if (key.equals("Ref")) return new Ref(value);
-      if (key.equals("Term")) return new Term(host.toJava(value));
+      if (key.equals("Ref")) return new Ref(value.getJSONObject(key));
+      if (key.equals("Term")) return new Term(host.toJava(value.getJSONObject(key)));
       if (key.equals("Field")) return new Field(value);
       throw new Exceptions.DataFilteringError("Invalid constraint value type: " + key);
     }
@@ -195,7 +195,7 @@ public class FilterPlan {
       public String field;
 
       public Field(JSONObject json) {
-        this.field = json.getString("field");
+        this.field = json.getString("Field");
       }
     }
 

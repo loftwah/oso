@@ -228,24 +228,6 @@ public class DataFilteringTest {
     for (Bar bar : allBars) checkAuthz(bar, "read", Foo.class, bar.foos());
   }
 
-  /* FIXME fails??
-  @Test
-  public void test_empty_constraints_in() {
-    o.loadStr("allow(_, _, foo: Foo) if _ in foo.logs;");
-    List<Foo> expected = filter(allFoos, foo -> foo.logs().size() > 0);
-    checkAuthz("gwen", "read", Foo.class, expected);
-  }
-  @Test
-  public void test_unify_ins() {
-    o.loadStr(
-      "allow(_, _, _: Bar{foos: foos}) if" +
-      "  foo in foos and goo in foos and foo = goo;");
-    checkAuthz("gwen", "read", Bar.class, filter(allBars, bar ->
-        bar.foos().size() > 0));
-  }
-
-  */
-
   @Test
   public void test_in_with_constraints_but_no_matching_objects() {
     o.loadStr("allow(_, _, foo: Foo) if log in foo.logs and log.data = \"nope\";");
@@ -263,6 +245,147 @@ public class DataFilteringTest {
   }
 
   @Test
+  public void test_no_relationship() {
+    o.loadStr("allow(_, _, foo: Foo) if foo.isFooey;");
+    checkAuthz("steve", "get", Foo.class, filter(allFoos, foo -> foo.isFooey));
+  }
+
+  @Test
+  public void test_neq() {
+    o.loadStr("allow(_, action, _: Foo{bar: bar}) if bar.id != action;");
+    for (Bar bar: allBars)
+      checkAuthz("steve", bar.id, Foo.class, filter(allFoos, foo -> foo.bar() != bar));
+  }
+
+  @Test
+  public void test_relationship() {
+    o.loadStr("allow(_, _, _: Foo{isFooey: true, bar: bar}) if bar.isCool;");
+    List<Foo> expected = filter(allFoos, foo -> foo.isFooey && foo.bar().isCool);
+    assertEquals(expected.size(), 2);
+    checkAuthz("steve", "get", Foo.class, expected);
+  }
+
+  @Test
+  public void test_duplex_relationship() {
+    o.loadStr("allow(_, _, foo: Foo) if foo in foo.bar.foos;");
+    checkAuthz("gwen", "get", Foo.class, allFoos);
+  }
+
+  @Test
+  public void test_scalar_in_list() {
+    o.loadStr("allow(_, _, foo: Foo) if foo.bar.isCool in [true, false];");
+    checkAuthz("gwen", "get", Foo.class, allFoos);
+  }
+
+  @Test
+  public void test_var_in_var() {
+    o.loadStr("allow(_, _, foo: Foo) if log in foo.logs and log.data = \"goodbye\";");
+    checkAuthz("steve", "get", Foo.class, filter(allFoos, foo ->
+          foo.logs().stream().anyMatch(log -> log.data == "goodbye")));
+  }
+
+  @Test
+  public void test_parent_child_cases() {
+    o.loadStr(
+      "allow(_: Log{foo: foo}, 0, foo: Foo);" +
+      "allow(log: Log, 1, foo: Foo) if log in foo.logs;" +
+      "allow(log: Log{foo: foo}, 2, foo: Foo) if log in foo.logs;");
+    for (int i = 0; i < 3; i++)
+      for (Log log: allLogs)
+        checkAuthz(log, i, Foo.class, List.of(log.foo()));
+  }
+
+  @Test
+  public void test_specializers() {
+    o.loadStr(
+      "allow(foo: Foo, \"NoneNone\", log) if foo = log.foo;" +
+      "allow(foo, \"NoneCls\", log: Log) if foo = log.foo;" +
+      "allow(foo, \"NoneDict\", _: {foo: foo});" +
+      "allow(foo, \"NonePtn\", _: Log{foo: foo});" +
+      "allow(foo: Foo, \"ClsNone\", log) if log in foo.logs;" +
+      "allow(foo: Foo, \"ClsCls\", log: Log) if foo = log.foo;" +
+      "allow(foo: Foo, \"ClsDict\", _: {foo: foo});" +
+      "allow(foo: Foo, \"ClsPtn\", _: Log{foo: foo});" +
+      "allow(_: {logs: logs}, \"DictNone\", log) if log in logs;" +
+      "allow(_: {logs: logs}, \"DictCls\", log: Log) if log in logs;" +
+      "allow(foo: {logs: logs}, \"DictDict\", log: {foo: foo}) if log in logs;" +
+      "allow(foo: {logs: logs}, \"DictPtn\", log: Log{foo: foo}) if log in logs;" +
+      "allow(_: Foo{logs: logs}, \"PtnNone\", log) if log in logs;" +
+      "allow(_: Foo{logs: logs}, \"PtnCls\", log: Log) if log in logs;" +
+      "allow(foo: Foo{logs: logs}, \"PtnDict\", log: {foo: foo}) if log in logs;"+
+      "allow(foo: Foo{logs: logs}, \"PtnPtn\", log: Log{foo: foo}) if log in logs;");
+    List<String> parts = List.of("None", "Cls", "Dict", "Ptn");
+    for (String a: parts) for (String b: parts) for (Log log: allLogs)
+      checkAuthz(log.foo(), a + b, Log.class, List.of(log));
+  }
+
+  @Test
+  public void test_ground_object_in_collection() {
+    o.loadStr("allow(_, _, _: Foo{numbers: ns}) if 1 in ns and 2 in ns;");
+    checkAuthz("gwen", "get", Foo.class, List.of(fourthFoo));
+  }
+
+  @Test
+  public void test_var_in_value() {
+    o.loadStr("allow(_, _, _: Log{data: d}) if d in [\"goodbye\", \"world\"];");
+    checkAuthz("steve", "get", Log.class, List.of(thirdLog, fourthLog));
+  }
+
+  @Test
+  public void test_field_eq() {
+    o.loadStr("allow(_, _, _: Bar{isCool: cool, isStillCool: cool});");
+    checkAuthz("gwen", "get", Bar.class, filter(allBars, bar ->
+          bar.isCool == bar.isStillCool));
+  }
+
+  @Test
+  public void test_field_neq() {
+    o.loadStr("allow(_, _, _: Bar{isCool: a, isStillCool: b}) if a != b;");
+    checkAuthz("gwen", "get", Bar.class, filter(allBars, bar ->
+          bar.isCool != bar.isStillCool));
+  }
+
+  @Test
+  public void test_const_in_coll() {
+    Integer magic = 1;
+    o.registerConstant(magic, "magic");
+    o.loadStr("allow(_, _, foo: Foo) if magic in foo.numbers;");
+    checkAuthz("gwen", "get", Foo.class, filter(allFoos, foo ->
+        foo.numbers.stream().anyMatch(num -> num == magic)));
+  }
+
+  @Test
+  public void test_param_field() {
+    o.loadStr("allow(data, id, _: Log{data: data, id: id});");
+    for (Log log: allLogs) checkAuthz(log.data, log.id, Log.class, List.of(log));
+  }
+
+  @Test
+  public void test_partial_isa_with_path() {
+    o.loadStr(
+      "allow(_, _, foo: Foo) if check(foo.bar);" +
+      "check(_: Bar{id: \"goodbye\"});" +
+      "check(_: Foo{bar: bar}) if bar.id = \"hello\";");
+    checkAuthz("gwen", "read", Foo.class, goodbyeBar.foos());
+  }
+
+  /* FIXME fails??
+  @Test
+  public void test_empty_constraints_in() {
+    o.loadStr("allow(_, _, foo: Foo) if _ in foo.logs;");
+    List<Foo> expected = filter(allFoos, foo -> foo.logs().size() > 0);
+    checkAuthz("gwen", "read", Foo.class, expected);
+  }
+  @Test
+  public void test_unify_ins() {
+    o.loadStr(
+      "allow(_, _, _: Bar{foos: foos}) if" +
+      "  foo in foos and goo in foos and foo = goo;");
+    checkAuthz("gwen", "read", Bar.class, filter(allBars, bar ->
+        bar.foos().size() > 0));
+  }
+
+  @Test
   public void test_unify_ins_field_eq() {
     o.loadStr(
       "allow(_, _, _: Bar{foos: foos}) if" +
@@ -270,6 +393,25 @@ public class DataFilteringTest {
     checkAuthz("gwen", "read", Bar.class, filter(allBars, bar ->
         !bar.foos().isEmpty()));
   }
+
+  @Test
+  public void test_field_cmp_rel_field() {
+    o.loadStr("allow(_, _, foo: Foo) if foo.bar.isCool = foo.isFooey;");
+    checkAuthz("gwen", "get", Foo.class, filter(allFoos,
+          foo -> foo.isFooey == foo.bar().isCool));
+  }
+
+  @Test
+  public void test_in_intersection() {
+    o.loadStr(
+      "allow(_, _, foo: Foo) if" +
+      "  num in foo.numbers and" +
+      "  goo in foo.bar.foos and" +
+      "  goo != foo and" +
+      "  num in goo.numbers;");
+    checkAuthz("gwen", "read", Foo.class, List.of());
+  }
+  */
 
 
   private <T> void checkAuthz(Object actor, Object action, Class<T> resourceCls, List<T> expected) {

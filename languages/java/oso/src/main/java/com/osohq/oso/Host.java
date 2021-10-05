@@ -221,6 +221,21 @@ public class Host implements Cloneable {
     return rightClass.isAssignableFrom(leftClass);
   }
 
+  public boolean isaWithPath(String inTag, List<String> path, String outTag) {
+    UserType cls = types.get(inTag), clsOut = types.get(outTag);
+    for (String p : path) {
+      TypeSpec ts = cls.fields.get(p);
+      if (ts.getClass() != TypeRelation.class) {
+        cls = (UserType) ts;
+      } else {
+        TypeRelation tr = (TypeRelation) ts;
+        String tag = tr.kind == RelationKind.CHILDREN ? "List" : tr.otherClassName;
+        cls = types.get(tag);
+      }
+    }
+    return clsOut == cls;
+  }
+
   public boolean operator(String op, List<Object> args) throws Exceptions.OsoException {
     Object left = args.get(0), right = args.get(1);
     if (op.equals("Eq")) {

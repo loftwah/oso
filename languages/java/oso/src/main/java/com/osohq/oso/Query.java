@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.Enumeration;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -280,6 +281,19 @@ public class Query implements Enumeration<HashMap<String, Object>> {
               host.isSubclass(data.getString("left_class_tag"), data.getString("right_class_tag"))
                   ? 1
                   : 0;
+          ffiQuery.questionResult(callId, answer);
+          break;
+        case "ExternalIsaWithPath":
+          callId = data.getLong("call_id");
+          String base = data.getString("base_tag");
+          ArrayList<String> path = new ArrayList();
+          JSONArray arr = data.getJSONArray("path");
+          for (int i = 0; i < arr.length(); i++) {
+            path.add(
+                arr.getJSONObject(i).getJSONObject("value").getString("String"));
+          }
+          String target = data.getString("class_tag");
+          answer = host.isaWithPath(base, path, target) ? 1 : 0;
           ffiQuery.questionResult(callId, answer);
           break;
         case "ExternalOp":
