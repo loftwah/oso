@@ -32,21 +32,22 @@ application, create a new Oso instance and load an Oso policy. You can
 mix and match any of Oso’s authorization APIs to implement features like
 roles with custom policies that you write to suit your application.
 
-Check out [Use Cases][use-cases] to learn more about how teams are using
-Oso to build authorization.
-
 Oso currently offers libraries for [Node.js][badge-nodejs-link],
 [Python][badge-python-link], [Go][badge-go-link],
 [Rust][badge-rust-link], [Ruby][badge-ruby-link], and
 [Java][badge-java-link].
 
-## Getting started
+## Documentation
 
-To get up and running with Oso, check out the [Getting Started
-guides](https://docs.osohq.com/getting-started/quickstart.html) in the [Oso
-documentation][docs].
+To get up and running with Oso, try the [Getting Started guide](https://docs.osohq.com/getting-started/quickstart.html).
 
-If you have questions or need help getting started come chat with our engineering team & hundreds of other developers using Oso:
+Full documentation is available at [docs.osohq.com](https://docs.osohq.com).
+
+Check out [Use Cases][use-cases] to learn more about how teams are using Oso in production.
+
+## Community & Support
+
+If you have any questions on Oso or authorization more generally, you can join our engineering team & hundreds of other developers using Oso in our community Slack:
 
 [![Button][join-slack-link]][badge-slack-link]
 
