@@ -229,7 +229,7 @@ public class Host implements Cloneable {
         cls = (UserType) ts;
       } else {
         TypeRelation tr = (TypeRelation) ts;
-        String tag = tr.kind == RelationKind.CHILDREN ? "List" : tr.otherClassName;
+        String tag = tr.kind == RelationKind.MANY ? "List" : tr.otherClassName;
         cls = types.get(tag);
       }
     }
@@ -476,8 +476,8 @@ public class Host implements Cloneable {
   }
 
   enum RelationKind {
-    PARENT,
-    CHILDREN
+    ONE,
+    MANY
   }
 
   interface TypeSpec {
@@ -509,11 +509,11 @@ public class Host implements Cloneable {
     private String serializeRelationKind() {
       String out = null;
       switch (kind) {
-        case PARENT:
-          out = "parent";
+        case ONE:
+          out = "one";
           break;
-        case CHILDREN:
-          out = "children";
+        case MANY:
+          out = "many";
           break;
       }
       return out;

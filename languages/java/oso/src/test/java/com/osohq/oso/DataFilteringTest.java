@@ -110,8 +110,8 @@ public class DataFilteringTest {
             "barId", string,
             "isFooey", bool,
             "numbers", list,
-            "bar", new Host.TypeRelation(Host.RelationKind.PARENT, "Bar", "barId", "id"),
-            "logs", new Host.TypeRelation(Host.RelationKind.CHILDREN, "Log", "id", "fooId")
+            "bar", new Host.TypeRelation(Host.RelationKind.ONE, "Bar", "barId", "id"),
+            "logs", new Host.TypeRelation(Host.RelationKind.MANY, "Log", "id", "fooId")
           )
         ).buildQuery = (cs) -> filterList(allFoos, cs);
 
@@ -122,7 +122,7 @@ public class DataFilteringTest {
             "id", string,
             "isCool", bool,
             "isStillCool", bool,
-            "foos", new Host.TypeRelation(Host.RelationKind.CHILDREN, "Foo", "id", "barId")
+            "foos", new Host.TypeRelation(Host.RelationKind.MANY, "Foo", "id", "barId")
           )
         ).buildQuery = (cs) -> filterList(allBars, cs);
 
@@ -133,7 +133,7 @@ public class DataFilteringTest {
             "id", string,
             "fooId", string,
             "data", string,
-            "foo", new Host.TypeRelation(Host.RelationKind.PARENT, "Foo", "fooId", "id")
+            "foo", new Host.TypeRelation(Host.RelationKind.ONE, "Foo", "fooId", "id")
           )
         ).buildQuery = (cs) -> filterList(allLogs, cs);
     } catch (Exception e) {
@@ -369,7 +369,6 @@ public class DataFilteringTest {
     checkAuthz("gwen", "read", Foo.class, goodbyeBar.foos());
   }
 
-  /* FIXME fails??
   @Test
   public void test_empty_constraints_in() {
     o.loadStr("allow(_, _, foo: Foo) if _ in foo.logs;");
@@ -411,8 +410,6 @@ public class DataFilteringTest {
       "  num in goo.numbers;");
     checkAuthz("gwen", "read", Foo.class, List.of());
   }
-  */
-
 
   private <T> void checkAuthz(Object actor, Object action, Class<T> resourceCls, List<T> expected) {
     List<T> actual = o.authorizedResources(actor, action, resourceCls);

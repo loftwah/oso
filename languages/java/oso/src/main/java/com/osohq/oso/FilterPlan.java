@@ -86,6 +86,7 @@ public class FilterPlan {
     EQ,
     NEQ,
     IN,
+    NIN,
     CONTAINS
   };
 
@@ -155,6 +156,8 @@ public class FilterPlan {
           return !val.equals(obj);
         case IN:
           return ((List<Object>) val).indexOf(obj) > -1;
+        case NIN:
+          return ((List<Object>) val).indexOf(obj) == -1;
         case CONTAINS:
           return ((List<Object>) obj).indexOf(val) > -1;
         default:
@@ -166,6 +169,7 @@ public class FilterPlan {
       if (kind.equals("Eq")) return FilterPlan.ConstraintKind.EQ;
       if (kind.equals("Neq")) return FilterPlan.ConstraintKind.NEQ;
       if (kind.equals("In")) return FilterPlan.ConstraintKind.IN;
+      if (kind.equals("Nin")) return FilterPlan.ConstraintKind.NIN;
       if (kind.equals("Contains")) return FilterPlan.ConstraintKind.CONTAINS;
       throw new Exceptions.DataFilteringError("Invalid constraint kind: " + kind);
     }
@@ -187,7 +191,7 @@ public class FilterPlan {
 
       public Ref(JSONObject json) {
         this.resultId = json.getInt("result_id");
-        this.field = json.getString("field");
+        this.field = json.isNull("field") ? null : json.getString("field");
       }
     }
 

@@ -106,7 +106,7 @@ public class Query implements Enumeration<HashMap<String, Object>> {
     String out;
     List<Object> res = typ.execQuery.apply(typ.buildQuery.apply(List.of(constraint)));
 
-    if (rel.kind == Host.RelationKind.PARENT) {
+    if (rel.kind == Host.RelationKind.ONE) {
       if (res.size() != 1)
         throw new Exceptions.InvalidCallError(
             "wrong number of parents: " + String.valueOf(res.size()));
